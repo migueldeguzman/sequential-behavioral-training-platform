@@ -1,0 +1,7 @@
+{
+  "jsonInputDir": "/path/to/your/json/output",
+  "textOutputDir": "/path/to/your/datasets-from-json",
+  "modelOutputDir": "/path/to/your/trained-models",
+  "baseModelPath": "/path/to/your/base-model",
+  "pipelineScript": "/path/to/your/instruction_tuning_pipeline.py"
+}
