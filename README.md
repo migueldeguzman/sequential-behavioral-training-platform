@@ -1,4 +1,4 @@
-# Sequential Behavioral Training and Testing Platform
+# Sequential Training and Testing Platform
 
 A React/TypeScript dashboard for managing ML instruction tuning pipelines. Provides real-time monitoring, dataset management, and model checkpoint management through a modern web interface.
 
