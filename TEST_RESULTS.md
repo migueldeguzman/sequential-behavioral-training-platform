@@ -1,4 +1,4 @@
-# Sequential Behavioral Training and Testing Platform - Test Results
+# Sequential Training and Testing Platform - Test Results
 
 **Test Date:** $(date)
 **Tester:** Claude (Automated API Testing)

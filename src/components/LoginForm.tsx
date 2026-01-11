@@ -38,7 +38,7 @@ export default function LoginForm({ onLogin }: LoginFormProps) {
     <div className="min-h-screen flex items-center justify-center bg-gray-950">
       <div className="w-full max-w-md p-8 bg-gray-900 rounded-lg shadow-xl">
         <h1 className="text-2xl font-bold text-center mb-8">
-          Sequential Behavioral Training and Testing Platform
+          Sequential Training and Testing Platform
         </h1>
 
         <form onSubmit={handleSubmit} className="space-y-6">

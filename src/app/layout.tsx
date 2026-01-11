@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Sequential Behavioral Training and Testing Platform",
+  title: "Sequential Training and Testing Platform",
   description: "Dashboard for managing ML instruction tuning pipelines",
 };
 

@@ -122,7 +122,7 @@ export default function Home() {
       {/* Header */}
       <header className="bg-gray-900 border-b border-gray-800">
         <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
-          <h1 className="text-xl font-bold">Sequential Behavioral Training and Testing Platform</h1>
+          <h1 className="text-xl font-bold">Sequential Training and Testing Platform</h1>
           <div className="flex items-center gap-4">
             <span className="text-gray-400">
               Welcome, {auth.user?.username}

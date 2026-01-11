@@ -1,5 +1,5 @@
 """
-FastAPI backend for Sequential Behavioral Training and Testing Platform.
+FastAPI backend for Sequential Training and Testing Platform.
 Orchestrates the Python training pipeline and provides real-time updates.
 """
 
@@ -258,7 +258,7 @@ async def lifespan(app: FastAPI):
         training_state["process"].terminate()
 
 
-app = FastAPI(title="Sequential Behavioral Training and Testing Platform API", lifespan=lifespan)
+app = FastAPI(title="Sequential Training and Testing Platform API", lifespan=lifespan)
 
 # CORS - allow all origins for development
 app.add_middleware(
