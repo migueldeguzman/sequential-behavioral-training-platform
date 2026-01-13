@@ -745,7 +745,7 @@
       "title": "Frontend - EnergyProfilerPanel Container",
       "description": "Create main Energy Profiler panel component",
       "priority": "HIGH",
-      "passes": false,
+      "passes": true,
       "steps": [
         "Create src/components/profiling/EnergyProfilerPanel.tsx",
         "Add panel header with title",

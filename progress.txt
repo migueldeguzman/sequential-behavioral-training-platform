@@ -1657,3 +1657,13 @@ Features: powermetrics integration, per-layer/per-token profiling, SQLite storag
   - Fixed token_complete handler to compute TokenMetrics inside setState callback
 - Verified TypeScript compilation with npm run build (successful)
 - Updated PRD: EP-043 passes = true
+
+2026-01-14 | EP-044 | COMPLETE | Frontend - EnergyProfilerPanel Container
+- Created src/components/profiling/EnergyProfilerPanel.tsx
+- Implemented panel header with title and description
+- Added tab navigation with three views: Live, Analysis, History
+- Wrapped component with ProfilingContext.Provider for state management
+- Handled panel state for active view switching
+- Added placeholder content for each view
+- Verified TypeScript compilation with npm run build (successful)
+- Updated PRD: EP-044 passes = true
