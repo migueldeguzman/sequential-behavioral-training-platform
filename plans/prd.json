@@ -1077,7 +1077,7 @@
       "title": "Backend - Error Handling",
       "description": "Add comprehensive error handling to profiling system",
       "priority": "HIGH",
-      "passes": false,
+      "passes": true,
       "steps": [
         "Handle powermetrics permission errors gracefully",
         "Handle model loading errors during profiled inference",

@@ -11,6 +11,7 @@ import subprocess
 import time
 import plistlib
 import threading
+import os
 from typing import Optional, List, Dict, Any
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -190,8 +191,9 @@ class PowerMonitor:
         Spawns powermetrics in background and begins collecting samples.
 
         Raises:
-            RuntimeError: If PowerMonitor is already running
+            RuntimeError: If PowerMonitor is already running or subprocess fails to start
             PermissionError: If powermetrics cannot be run without password
+            FileNotFoundError: If powermetrics is not installed
         """
         if self._running:
             raise RuntimeError("PowerMonitor is already running")
@@ -199,25 +201,45 @@ class PowerMonitor:
         if not self.is_available():
             raise PermissionError(
                 "powermetrics requires passwordless sudo access. "
-                "Run setup_powermetrics.sh or see README_POWERMETRICS.md"
+                "Run setup_powermetrics.sh or see README_POWERMETRICS.md for setup instructions. "
+                "To add passwordless sudo access, add this line to /etc/sudoers.d/powermetrics:\n"
+                f"{os.environ.get('USER', 'USERNAME')} ALL=(ALL) NOPASSWD: /usr/bin/powermetrics"
             )
 
-        # Start powermetrics subprocess
-        # -i: sample interval in milliseconds
-        # -f plist: output format (XML plist for easy parsing)
-        # --samplers: which samplers to enable (cpu_power, gpu_power, etc.)
-        self._process = subprocess.Popen(
-            [
-                'sudo', 'powermetrics',
-                '-i', str(self.sample_interval_ms),
-                '-f', 'plist',
-                '--samplers', 'cpu_power,gpu_power,thermal'
-            ],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            bufsize=1
-        )
+        try:
+            # Start powermetrics subprocess
+            # -i: sample interval in milliseconds
+            # -f plist: output format (XML plist for easy parsing)
+            # --samplers: which samplers to enable (cpu_power, gpu_power, etc.)
+            self._process = subprocess.Popen(
+                [
+                    'sudo', 'powermetrics',
+                    '-i', str(self.sample_interval_ms),
+                    '-f', 'plist',
+                    '--samplers', 'cpu_power,gpu_power,thermal'
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1
+            )
+        except FileNotFoundError:
+            raise FileNotFoundError(
+                "powermetrics command not found. This tool is only available on macOS. "
+                "If you're on macOS, ensure powermetrics is installed at /usr/bin/powermetrics"
+            )
+        except Exception as e:
+            raise RuntimeError(f"Failed to start powermetrics subprocess: {str(e)}")
+
+        # Verify process started successfully
+        time.sleep(0.1)  # Give process a moment to start
+        if self._process.poll() is not None:
+            stderr_output = self._process.stderr.read() if self._process.stderr else "No error output"
+            raise RuntimeError(
+                f"powermetrics process terminated immediately after start. "
+                f"Return code: {self._process.returncode}. "
+                f"Error output: {stderr_output}"
+            )
 
         self._start_time = time.time()
         self._running = True
@@ -227,6 +249,8 @@ class PowerMonitor:
         # Start background sampling thread
         self._sampling_thread = threading.Thread(target=self._sampling_loop, daemon=True)
         self._sampling_thread.start()
+
+        print(f"PowerMonitor started successfully with {self.sample_interval_ms}ms sampling interval")
 
     def stop(self) -> None:
         """

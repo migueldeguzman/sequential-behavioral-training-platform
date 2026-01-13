@@ -28,19 +28,48 @@ class ProfileDatabase:
         self.conn: Optional[sqlite3.Connection] = None
 
     def connect(self):
-        """Establish database connection and initialize schema."""
-        # Ensure parent directory exists
-        db_file = Path(self.db_path)
-        db_file.parent.mkdir(parents=True, exist_ok=True)
+        """Establish database connection and initialize schema.
 
-        # Connect to database
-        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
-        self.conn.row_factory = sqlite3.Row  # Enable column access by name
+        Raises:
+            sqlite3.OperationalError: If database file cannot be created or accessed
+            PermissionError: If insufficient permissions to write to database location
+            Exception: For other database initialization errors
+        """
+        try:
+            # Ensure parent directory exists
+            db_file = Path(self.db_path)
+            try:
+                db_file.parent.mkdir(parents=True, exist_ok=True)
+            except PermissionError as e:
+                raise PermissionError(
+                    f"Insufficient permissions to create database directory: {db_file.parent}. "
+                    f"Error: {str(e)}"
+                )
 
-        # Initialize schema
-        self._create_schema()
+            # Connect to database
+            try:
+                self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
+                self.conn.row_factory = sqlite3.Row  # Enable column access by name
+            except sqlite3.OperationalError as e:
+                raise sqlite3.OperationalError(
+                    f"Failed to connect to database at {self.db_path}. "
+                    f"Check if the path is valid and writable. Error: {str(e)}"
+                )
 
-        logger.info(f"Connected to profiling database at {self.db_path}")
+            # Initialize schema
+            try:
+                self._create_schema()
+            except Exception as e:
+                logger.error(f"Failed to initialize database schema: {str(e)}")
+                if self.conn:
+                    self.conn.close()
+                raise
+
+            logger.info(f"Connected to profiling database at {self.db_path}")
+
+        except Exception as e:
+            logger.error(f"Database connection failed: {str(e)}")
+            raise
 
     def close(self):
         """Close database connection."""
@@ -288,30 +317,52 @@ class ProfileDatabase:
             samples: List of power sample dicts with keys:
                 timestamp_ms, cpu_power_mw, gpu_power_mw, ane_power_mw,
                 dram_power_mw, total_power_mw
+
+        Raises:
+            sqlite3.IntegrityError: If run_id doesn't exist (foreign key constraint)
+            sqlite3.OperationalError: If database write fails
         """
-        cursor = self.conn.cursor()
-        cursor.executemany(
-            """
-            INSERT INTO power_samples (
-                run_id, timestamp_ms, cpu_power_mw, gpu_power_mw,
-                ane_power_mw, dram_power_mw, total_power_mw
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            [
-                (
-                    run_id,
-                    s["timestamp_ms"],
-                    s["cpu_power_mw"],
-                    s["gpu_power_mw"],
-                    s["ane_power_mw"],
-                    s["dram_power_mw"],
-                    s["total_power_mw"],
-                )
-                for s in samples
-            ],
-        )
-        self.conn.commit()
-        logger.debug(f"Added {len(samples)} power samples for run {run_id}")
+        if not self.conn:
+            raise RuntimeError("Database connection not established. Call connect() first.")
+
+        try:
+            cursor = self.conn.cursor()
+            cursor.executemany(
+                """
+                INSERT INTO power_samples (
+                    run_id, timestamp_ms, cpu_power_mw, gpu_power_mw,
+                    ane_power_mw, dram_power_mw, total_power_mw
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        run_id,
+                        s["timestamp_ms"],
+                        s["cpu_power_mw"],
+                        s["gpu_power_mw"],
+                        s["ane_power_mw"],
+                        s["dram_power_mw"],
+                        s["total_power_mw"],
+                    )
+                    for s in samples
+                ],
+            )
+            self.conn.commit()
+            logger.debug(f"Added {len(samples)} power samples for run {run_id}")
+        except sqlite3.IntegrityError as e:
+            self.conn.rollback()
+            logger.error(f"Failed to add power samples: foreign key constraint violation for run {run_id}")
+            raise sqlite3.IntegrityError(
+                f"Cannot add power samples: run_id '{run_id}' does not exist. Error: {str(e)}"
+            )
+        except sqlite3.OperationalError as e:
+            self.conn.rollback()
+            logger.error(f"Database write failed for power samples: {str(e)}")
+            raise
+        except Exception as e:
+            self.conn.rollback()
+            logger.error(f"Unexpected error adding power samples: {str(e)}")
+            raise RuntimeError(f"Failed to add power samples: {str(e)}")
 
     def add_pipeline_section(
         self,
