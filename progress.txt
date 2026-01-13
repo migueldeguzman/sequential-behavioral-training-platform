@@ -756,3 +756,66 @@ Features: powermetrics integration, per-layer/per-token profiling, SQLite storag
 - Verified Python syntax with py_compile (no errors)
 - Updated PRD: EP-024 passes = true
 
+### EP-025: InferencePipelineProfiler - Data Aggregation - COMPLETED
+- Implemented comprehensive data aggregation in InferencePipelineProfiler
+- Added aggregate_profiling_data() method (lines 1048-1168):
+  - Collects all profiling data from completed session into structured format
+  - Step 1: Collects all power samples from PowerMonitor
+    * Converts PowerSample objects to dictionaries
+    * Includes timestamp, CPU/GPU/ANE/DRAM/total power
+  - Step 2: Collects all section timings with energy calculations
+    * Includes phase, section name, start/end times, duration
+    * Includes energy (mJ), average power (mW), power sample count
+  - Step 3: Collects layer metrics from LayerProfiler
+    * Layer index, component name, duration
+    * Activation statistics (mean, std, max, sparsity)
+  - Step 4: Aggregates component metrics by component type
+    * Calls _aggregate_component_metrics() helper
+    * Groups by component name (q_proj, k_proj, etc.)
+  - Step 5: Collects deep operation metrics if enabled
+    * Calls _aggregate_deep_metrics() helper
+    * Includes attention, MLP, and LayerNorm operation metrics
+  - Step 6: Energy per section already calculated (done in section() context manager)
+  - Step 7: Builds complete run data structure
+    * run_metadata: run_id, timestamp, model, prompt, response, tags, etc.
+    * power_samples: List of all power measurements
+    * section_timings: List of all pipeline sections with energy
+    * layer_metrics: Per-layer timing and activation statistics
+    * component_metrics: Per-component aggregated metrics
+    * deep_metrics: Operation-level metrics (if available)
+    * energy_summary: Total and per-phase energy breakdown
+  - Comprehensive logging throughout aggregation process
+  - Returns complete dictionary with all profiling data
+- Added _aggregate_component_metrics() helper method (lines 1170-1232):
+  - Groups layer metrics by component name
+  - Calculates total duration per component type
+  - Calculates count of occurrences per component
+  - Calculates average duration per occurrence
+  - Calculates average activation statistics across occurrences
+  - Returns dictionary mapping component name to aggregated metrics
+- Added _aggregate_deep_metrics() helper method (lines 1234-1318):
+  - Collects attention operation metrics from DeepAttentionProfiler
+    * QK^T matmul, scale, mask, softmax, value matmul timings
+    * Attention entropy, sparsity, max weights per head and averaged
+  - Collects MLP operation metrics
+    * Gate proj, up proj, gate*up mult, down proj timings
+    * Activation kill ratios
+  - Collects LayerNorm operation metrics
+    * Mean, variance, normalization, scale/shift timings
+    * Variance ratios (input/output)
+  - Calculates summary statistics
+    * Number of operations per type
+    * Total time per operation type
+    * Average attention entropy and MLP activation kill ratio
+  - Returns dictionary with attention_ops, mlp_ops, layernorm_ops, and summary
+- All EP-025 requirements fulfilled:
+  ✓ Collect all power samples from PowerMonitor
+  ✓ Collect all section timings
+  ✓ Collect all token metrics with layer breakdowns
+  ✓ Collect all component metrics
+  ✓ Collect deep operation metrics if enabled
+  ✓ Calculate energy per section (power * time)
+  ✓ Build complete run data structure
+- Verified Python syntax with py_compile (no errors)
+- Updated PRD: EP-025 passes = true
+

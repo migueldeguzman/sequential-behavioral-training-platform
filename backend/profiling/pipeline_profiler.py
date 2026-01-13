@@ -1045,6 +1045,278 @@ class InferencePipelineProfiler:
             "avg_power_mw": avg_power_mw
         }
 
+    def aggregate_profiling_data(self, session: ProfilingSession) -> Dict[str, Any]:
+        """
+        Aggregate all profiling data from a completed session.
+
+        This collects and organizes all profiling metrics:
+        - Power samples from PowerMonitor
+        - Section timings with energy calculations
+        - Token metrics with layer breakdowns
+        - Component metrics (attention, MLP, layernorm)
+        - Deep operation metrics (if deep profiling enabled)
+
+        Args:
+            session: Completed ProfilingSession with all collected data
+
+        Returns:
+            Dictionary containing complete run data structure:
+                - run_metadata: run_id, model, prompt, timestamps, etc.
+                - power_samples: List of all power measurements
+                - section_timings: List of all pipeline sections with energy
+                - layer_metrics: Per-layer timing and activation statistics
+                - component_metrics: Per-component breakdowns
+                - deep_metrics: Operation-level metrics (if available)
+                - energy_summary: Total and per-phase energy breakdown
+
+        Example:
+            with profiler.run(prompt="Hello", model_name="llama-7b") as session:
+                # ... complete inference ...
+                data = profiler.aggregate_profiling_data(session)
+                print(f"Total sections: {len(data['section_timings'])}")
+                print(f"Total energy: {data['energy_summary']['total_energy_mj']:.2f} mJ")
+        """
+        logger.info(f"Aggregating profiling data for run {session.run_id}")
+
+        # 1. Collect power samples from PowerMonitor
+        power_samples = []
+        if session.power_monitor:
+            samples = session.power_monitor.get_samples()
+            power_samples = [
+                {
+                    "timestamp_ms": s.relative_time_ms,
+                    "cpu_power_mw": s.cpu_power_mw,
+                    "gpu_power_mw": s.gpu_power_mw,
+                    "ane_power_mw": s.ane_power_mw,
+                    "dram_power_mw": s.dram_power_mw,
+                    "total_power_mw": s.total_power_mw
+                }
+                for s in samples
+            ]
+            logger.debug(f"Collected {len(power_samples)} power samples")
+
+        # 2. Collect all section timings with energy calculations
+        section_timings = []
+        for section in session.sections:
+            section_timings.append({
+                "phase": section.phase,
+                "section_name": section.section_name,
+                "start_time": section.start_time,
+                "end_time": section.end_time,
+                "duration_ms": section.duration_ms,
+                "energy_mj": section.energy_mj,
+                "avg_power_mw": section.avg_power_mw,
+                "num_power_samples": len(section.power_samples)
+            })
+        logger.debug(f"Collected {len(section_timings)} section timings")
+
+        # 3. Collect layer metrics from LayerProfiler
+        layer_metrics = []
+        if session.layer_profiler:
+            timings = session.layer_profiler.get_timings()
+            for timing in timings:
+                layer_metrics.append({
+                    "layer_index": timing.layer_index,
+                    "component_name": timing.component_name,
+                    "duration_ms": timing.duration_ms,
+                    "activation_mean": timing.activation_mean,
+                    "activation_std": timing.activation_std,
+                    "activation_max": timing.activation_max,
+                    "activation_sparsity": timing.activation_sparsity
+                })
+            logger.debug(f"Collected {len(layer_metrics)} layer/component metrics")
+
+        # 4. Collect component metrics (aggregated by component type)
+        component_metrics = self._aggregate_component_metrics(layer_metrics)
+        logger.debug(f"Aggregated metrics for {len(component_metrics)} component types")
+
+        # 5. Collect deep operation metrics if enabled
+        deep_metrics = None
+        if session.deep_profiler and session.profiling_depth == "deep":
+            deep_metrics = self._aggregate_deep_metrics(session.deep_profiler)
+            logger.debug(f"Collected deep operation metrics")
+
+        # 6. Calculate energy per section (already done in section_timings)
+        # Energy is calculated in the section() context manager using power * time
+
+        # 7. Build complete run data structure
+        run_data = {
+            "run_metadata": {
+                "run_id": session.run_id,
+                "timestamp": datetime.fromtimestamp(session.start_time).isoformat(),
+                "model_name": session.model_name,
+                "prompt": session.prompt,
+                "response": session.response,
+                "experiment_name": session.experiment_name,
+                "tags": session.tags,
+                "profiling_depth": session.profiling_depth,
+                "start_time": session.start_time,
+                "end_time": time.time()
+            },
+            "power_samples": power_samples,
+            "section_timings": section_timings,
+            "layer_metrics": layer_metrics,
+            "component_metrics": component_metrics,
+            "deep_metrics": deep_metrics,
+            "energy_summary": self.get_total_inference_energy(session)
+        }
+
+        logger.info(f"Aggregation complete: {len(power_samples)} samples, "
+                   f"{len(section_timings)} sections, "
+                   f"{len(layer_metrics)} layer metrics")
+
+        return run_data
+
+    def _aggregate_component_metrics(self, layer_metrics: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+        """
+        Aggregate layer metrics by component type.
+
+        Groups all timings by component name (e.g., q_proj, k_proj, gate_proj)
+        and calculates aggregate statistics (total time, average activation stats).
+
+        Args:
+            layer_metrics: List of per-layer component metrics
+
+        Returns:
+            Dictionary mapping component name to aggregated metrics:
+                - total_duration_ms: Sum of all durations for this component
+                - count: Number of occurrences
+                - avg_duration_ms: Average duration per occurrence
+                - avg_activation_mean: Average activation mean across occurrences
+                - avg_activation_std: Average activation std across occurrences
+                - avg_activation_max: Average activation max across occurrences
+                - avg_activation_sparsity: Average sparsity across occurrences
+        """
+        component_aggregates = {}
+
+        for metric in layer_metrics:
+            component_name = metric["component_name"]
+
+            if component_name not in component_aggregates:
+                component_aggregates[component_name] = {
+                    "total_duration_ms": 0.0,
+                    "count": 0,
+                    "sum_activation_mean": 0.0,
+                    "sum_activation_std": 0.0,
+                    "sum_activation_max": 0.0,
+                    "sum_activation_sparsity": 0.0
+                }
+
+            agg = component_aggregates[component_name]
+            agg["total_duration_ms"] += metric["duration_ms"]
+            agg["count"] += 1
+
+            if metric["activation_mean"] is not None:
+                agg["sum_activation_mean"] += metric["activation_mean"]
+            if metric["activation_std"] is not None:
+                agg["sum_activation_std"] += metric["activation_std"]
+            if metric["activation_max"] is not None:
+                agg["sum_activation_max"] += metric["activation_max"]
+            if metric["activation_sparsity"] is not None:
+                agg["sum_activation_sparsity"] += metric["activation_sparsity"]
+
+        # Calculate averages
+        component_metrics = {}
+        for component_name, agg in component_aggregates.items():
+            count = agg["count"]
+            component_metrics[component_name] = {
+                "total_duration_ms": agg["total_duration_ms"],
+                "count": count,
+                "avg_duration_ms": agg["total_duration_ms"] / count,
+                "avg_activation_mean": agg["sum_activation_mean"] / count if count > 0 else None,
+                "avg_activation_std": agg["sum_activation_std"] / count if count > 0 else None,
+                "avg_activation_max": agg["sum_activation_max"] / count if count > 0 else None,
+                "avg_activation_sparsity": agg["sum_activation_sparsity"] / count if count > 0 else None
+            }
+
+        return component_metrics
+
+    def _aggregate_deep_metrics(self, deep_profiler: DeepAttentionProfiler) -> Dict[str, Any]:
+        """
+        Aggregate deep operation metrics from DeepAttentionProfiler.
+
+        Collects all operation-level metrics captured during deep profiling:
+        - Attention operation timings (QK^T, scale, mask, softmax, value matmul)
+        - Attention extra metrics (entropy, sparsity, max weights)
+        - MLP operation timings (gate, up, mult, down projections)
+        - MLP activation kill ratios
+        - LayerNorm operation timings (mean, variance, normalization, scale/shift)
+        - LayerNorm variance ratios
+
+        Args:
+            deep_profiler: DeepAttentionProfiler with collected metrics
+
+        Returns:
+            Dictionary containing aggregated deep metrics:
+                - attention_ops: List of attention operation metrics
+                - mlp_ops: List of MLP operation metrics
+                - layernorm_ops: List of LayerNorm operation metrics
+                - summary: Aggregate statistics across all operations
+        """
+        # Get attention metrics
+        attention_metrics = deep_profiler.get_metrics()
+        attention_ops = []
+        for metric in attention_metrics:
+            attention_ops.append({
+                "qk_matmul_time": metric.qk_matmul_time,
+                "scale_time": metric.scale_time,
+                "mask_time": metric.mask_time,
+                "softmax_time": metric.softmax_time,
+                "value_matmul_time": metric.value_matmul_time,
+                "total_time": metric.total_time,
+                "attention_entropy_per_head": metric.attention_entropy_per_head,
+                "max_attention_weight_per_head": metric.max_attention_weight_per_head,
+                "attention_sparsity_per_head": metric.attention_sparsity_per_head,
+                "avg_attention_entropy": metric.avg_attention_entropy,
+                "avg_max_attention_weight": metric.avg_max_attention_weight,
+                "avg_attention_sparsity": metric.avg_attention_sparsity
+            })
+
+        # Get MLP metrics
+        mlp_metrics = deep_profiler.get_mlp_metrics()
+        mlp_ops = []
+        for metric in mlp_metrics:
+            mlp_ops.append({
+                "gate_proj_time": metric.gate_proj_time,
+                "up_proj_time": metric.up_proj_time,
+                "gate_up_mult_time": metric.gate_up_mult_time,
+                "down_proj_time": metric.down_proj_time,
+                "total_time": metric.total_time,
+                "activation_kill_ratio": metric.activation_kill_ratio
+            })
+
+        # Get LayerNorm metrics
+        layernorm_metrics = deep_profiler.get_layernorm_metrics()
+        layernorm_ops = []
+        for metric in layernorm_metrics:
+            layernorm_ops.append({
+                "mean_time": metric.mean_time,
+                "variance_time": metric.variance_time,
+                "normalization_time": metric.normalization_time,
+                "scale_shift_time": metric.scale_shift_time,
+                "total_time": metric.total_time,
+                "variance_ratio": metric.variance_ratio
+            })
+
+        # Calculate summary statistics
+        summary = {
+            "num_attention_ops": len(attention_ops),
+            "num_mlp_ops": len(mlp_ops),
+            "num_layernorm_ops": len(layernorm_ops),
+            "total_attention_time": sum(op["total_time"] for op in attention_ops if op["total_time"] is not None),
+            "total_mlp_time": sum(op["total_time"] for op in mlp_ops if op["total_time"] is not None),
+            "total_layernorm_time": sum(op["total_time"] for op in layernorm_ops if op["total_time"] is not None),
+            "avg_attention_entropy": sum(op["avg_attention_entropy"] for op in attention_ops if op["avg_attention_entropy"] is not None) / len(attention_ops) if attention_ops else None,
+            "avg_mlp_activation_kill_ratio": sum(op["activation_kill_ratio"] for op in mlp_ops if op["activation_kill_ratio"] is not None) / len(mlp_ops) if mlp_ops else None
+        }
+
+        return {
+            "attention_ops": attention_ops,
+            "mlp_ops": mlp_ops,
+            "layernorm_ops": layernorm_ops,
+            "summary": summary
+        }
+
 
 # Add section() method to ProfilingSession
 def _session_section(self, section_name: str, phase: str):

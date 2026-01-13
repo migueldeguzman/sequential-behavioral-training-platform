@@ -467,7 +467,7 @@
       "title": "InferencePipelineProfiler - Data Aggregation",
       "description": "Aggregate all profiling data for storage",
       "priority": "CRITICAL",
-      "passes": false,
+      "passes": true,
       "steps": [
         "Collect all power samples from PowerMonitor",
         "Collect all section timings",
