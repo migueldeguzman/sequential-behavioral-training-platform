@@ -643,3 +643,69 @@ Features: powermetrics integration, per-layer/per-token profiling, SQLite storag
 - Verified Python syntax with py_compile (no errors)
 - Updated PRD: EP-022 passes = true
 
+### EP-023: InferencePipelineProfiler - Decode Phase - COMPLETED
+- Implemented decode phase profiling helper methods in InferencePipelineProfiler
+- Added profile_decode_token() method (lines 582-636):
+  - Wraps single decode token generation with section timing
+  - Creates unique section name per token: f"decode_token_{token_index}"
+  - Resets LayerProfiler before each token for fresh per-token metrics
+  - Uses session.section(section_name, "decode") context manager
+  - Runs model forward pass and extracts next token logits
+  - Updates model kwargs (past_key_values, etc.) for next iteration
+  - Captures layer timings via LayerProfiler hooks per token
+  - Returns tuple of (next_token_logits, updated_model_kwargs)
+  - Comprehensive docstring with usage example
+- Added profile_decode_embedding() method (lines 638-662):
+  - Wraps token embedding lookup during decode with section timing
+  - Uses session.section("embedding", "decode") context manager
+  - Accepts arbitrary embedding function with *args and **kwargs
+  - Returns embedding tensor
+  - Comprehensive docstring with usage example
+- Added profile_decode_position() method (lines 664-688):
+  - Wraps position embedding during decode with section timing
+  - Uses session.section("position", "decode") context manager
+  - Accepts arbitrary position function with *args and **kwargs
+  - Returns result with position embeddings
+  - Comprehensive docstring with usage example
+- Added profile_decode_layers() method (lines 690-716):
+  - Wraps transformer layers during decode with section timing
+  - Uses session.section("layers", "decode") context manager
+  - LayerProfiler hooks automatically capture per-layer metrics
+  - Returns output from transformer layers
+  - Comprehensive docstring with usage example
+- Added profile_decode_lm_head() method (lines 718-742):
+  - Wraps LM head projection during decode with section timing
+  - Uses session.section("lm_head", "decode") context manager
+  - Returns vocabulary logits
+  - Comprehensive docstring with usage example
+- Added profile_decode_sampling() method (lines 744-770):
+  - Wraps sampling operation (temperature, top_k, top_p, token selection)
+  - Uses session.section("sampling", "decode") context manager
+  - Returns selected token ID
+  - Comprehensive docstring with usage example
+- Added profile_decode_kv_cache_append() method (lines 772-796):
+  - Wraps KV-cache append during decode with section timing
+  - Uses session.section("kv_cache_append", "decode") context manager
+  - Returns updated KV cache
+  - Comprehensive docstring with usage example
+- Added profile_decode_loop() convenience method (lines 798-896):
+  - Wraps complete decode loop with automatic per-token profiling
+  - Accepts max_new_tokens, temperature, top_p, top_k parameters
+  - Resets LayerProfiler between tokens for fresh metrics
+  - Creates section per token: f"token_{token_idx}"
+  - Implements temperature scaling for sampling
+  - Implements top_k filtering for sampling
+  - Implements top_p (nucleus) filtering for sampling
+  - Uses torch.multinomial for token sampling
+  - Updates model kwargs (past_key_values) per iteration
+  - Captures layer timings via hooks per token
+  - Checks for EOS token (ID 2) to terminate early
+  - Returns generated token IDs tensor
+  - Comprehensive docstring with usage example showing integration with prefill
+- All decode methods leverage existing section() context manager for automatic energy correlation
+- Decode metrics automatically stored in session.sections list
+- LayerProfiler reset between tokens ensures per-token granularity
+- Database integration already handled by existing _save_run_to_database() method
+- Verified Python syntax with py_compile (no errors)
+- Updated PRD: EP-023 passes = true
+

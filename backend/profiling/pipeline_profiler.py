@@ -575,6 +575,326 @@ class InferencePipelineProfiler:
 
         return output if return_full_output else output.logits
 
+    # =========================================================================
+    # Decode Phase Profiling Methods
+    # =========================================================================
+
+    def profile_decode_token(
+        self,
+        session: ProfilingSession,
+        model: Any,
+        input_ids: Any,
+        token_index: int,
+        **model_kwargs
+    ) -> Any:
+        """
+        Profile generation of a single decode token.
+
+        Wraps one iteration of the decode loop with section timing and
+        captures per-token layer metrics.
+
+        Args:
+            session: Active profiling session
+            model: The language model
+            input_ids: Current input token IDs
+            token_index: Index of the token being generated (0-based)
+            **model_kwargs: Additional model arguments (past_key_values, attention_mask, etc.)
+
+        Returns:
+            Tuple of (next_token_id, updated_model_kwargs)
+
+        Example:
+            for token_idx in range(max_tokens):
+                next_token, model_kwargs = profiler.profile_decode_token(
+                    session, model, input_ids, token_idx, **model_kwargs
+                )
+                input_ids = torch.cat([input_ids, next_token.unsqueeze(0)], dim=-1)
+        """
+        section_name = f"decode_token_{token_index}"
+
+        # Reset layer profiler for fresh per-token metrics
+        if session.layer_profiler:
+            session.layer_profiler.reset()
+
+        with session.section(section_name, "decode"):
+            # Run model forward pass for this token
+            output = model(input_ids, return_dict=True, **model_kwargs)
+
+            # Get next token logits
+            next_token_logits = output.logits[:, -1, :]
+
+            # Update model kwargs (past_key_values, etc.)
+            updated_kwargs = model_kwargs.copy()
+            if hasattr(output, 'past_key_values') and output.past_key_values is not None:
+                updated_kwargs['past_key_values'] = output.past_key_values
+
+            # Get layer metrics for this token
+            if session.layer_profiler:
+                layer_timings = session.layer_profiler.get_timings()
+                logger.debug(f"Token {token_index}: Captured {len(layer_timings)} layer timings")
+
+            return next_token_logits, updated_kwargs
+
+    def profile_decode_embedding(
+        self,
+        session: ProfilingSession,
+        embedding_func: callable,
+        *args,
+        **kwargs
+    ) -> Any:
+        """
+        Profile token embedding lookup for decode.
+
+        Args:
+            session: Active profiling session
+            embedding_func: Function to get embeddings (e.g., model.embed_tokens)
+            *args, **kwargs: Arguments to embedding function
+
+        Returns:
+            Embedding tensor
+
+        Example:
+            embeddings = profiler.profile_decode_embedding(
+                session, model.embed_tokens, prev_token_ids
+            )
+        """
+        with session.section("embedding", "decode"):
+            return embedding_func(*args, **kwargs)
+
+    def profile_decode_position(
+        self,
+        session: ProfilingSession,
+        position_func: callable,
+        *args,
+        **kwargs
+    ) -> Any:
+        """
+        Profile position embedding for decode.
+
+        Args:
+            session: Active profiling session
+            position_func: Function to add position embeddings
+            *args, **kwargs: Arguments to position function
+
+        Returns:
+            Result with position embeddings
+
+        Example:
+            hidden = profiler.profile_decode_position(
+                session, add_positional_encoding, hidden, position
+            )
+        """
+        with session.section("position", "decode"):
+            return position_func(*args, **kwargs)
+
+    def profile_decode_layers(
+        self,
+        session: ProfilingSession,
+        layers_func: callable,
+        *args,
+        **kwargs
+    ) -> Any:
+        """
+        Profile transformer layers during decode.
+
+        LayerProfiler hooks automatically capture per-layer metrics.
+
+        Args:
+            session: Active profiling session
+            layers_func: Function to run transformer layers
+            *args, **kwargs: Arguments to layers function
+
+        Returns:
+            Output from transformer layers
+
+        Example:
+            output = profiler.profile_decode_layers(
+                session, model.model.layers, hidden_states
+            )
+        """
+        with session.section("layers", "decode"):
+            return layers_func(*args, **kwargs)
+
+    def profile_decode_lm_head(
+        self,
+        session: ProfilingSession,
+        lm_head_func: callable,
+        *args,
+        **kwargs
+    ) -> Any:
+        """
+        Profile LM head projection during decode.
+
+        Args:
+            session: Active profiling session
+            lm_head_func: Language model head projection function
+            *args, **kwargs: Arguments to LM head
+
+        Returns:
+            Vocabulary logits
+
+        Example:
+            logits = profiler.profile_decode_lm_head(
+                session, model.lm_head, hidden_states
+            )
+        """
+        with session.section("lm_head", "decode"):
+            return lm_head_func(*args, **kwargs)
+
+    def profile_decode_sampling(
+        self,
+        session: ProfilingSession,
+        sampling_func: callable,
+        *args,
+        **kwargs
+    ) -> Any:
+        """
+        Profile sampling operation during decode.
+
+        Includes temperature scaling, top_k, top_p, and final token selection.
+
+        Args:
+            session: Active profiling session
+            sampling_func: Function to sample next token from logits
+            *args, **kwargs: Arguments to sampling function
+
+        Returns:
+            Selected token ID
+
+        Example:
+            next_token = profiler.profile_decode_sampling(
+                session, sample_token, logits, temperature=0.8, top_p=0.9
+            )
+        """
+        with session.section("sampling", "decode"):
+            return sampling_func(*args, **kwargs)
+
+    def profile_decode_kv_cache_append(
+        self,
+        session: ProfilingSession,
+        append_func: callable,
+        *args,
+        **kwargs
+    ) -> Any:
+        """
+        Profile KV-cache append during decode.
+
+        Args:
+            session: Active profiling session
+            append_func: Function to append new key/value to cache
+            *args, **kwargs: Arguments to append function
+
+        Returns:
+            Updated KV cache
+
+        Example:
+            cache = profiler.profile_decode_kv_cache_append(
+                session, append_to_cache, cache, new_key, new_value
+            )
+        """
+        with session.section("kv_cache_append", "decode"):
+            return append_func(*args, **kwargs)
+
+    def profile_decode_loop(
+        self,
+        session: ProfilingSession,
+        model: Any,
+        input_ids: Any,
+        max_new_tokens: int = 50,
+        temperature: float = 1.0,
+        top_p: float = 1.0,
+        top_k: int = 0,
+        **model_kwargs
+    ) -> Any:
+        """
+        Profile complete decode loop with automatic per-token profiling.
+
+        Convenience method that profiles token generation loop with section
+        breakdown per token. LayerProfiler is automatically reset between tokens.
+
+        Args:
+            session: Active profiling session
+            model: The language model
+            input_ids: Initial input token IDs (after prefill)
+            max_new_tokens: Maximum number of tokens to generate
+            temperature: Sampling temperature
+            top_p: Nucleus sampling parameter
+            top_k: Top-k sampling parameter
+            **model_kwargs: Additional model arguments (past_key_values, etc.)
+
+        Returns:
+            Generated token IDs tensor
+
+        Example:
+            with profiler.run(prompt="Hello", model_name="llama-7b") as session:
+                # Prefill
+                prefill_output = profiler.profile_prefill(session, model, input_ids)
+
+                # Decode
+                generated = profiler.profile_decode_loop(
+                    session, model, input_ids, max_new_tokens=50,
+                    past_key_values=prefill_output.past_key_values
+                )
+        """
+        try:
+            import torch
+            import torch.nn.functional as F
+        except ImportError:
+            raise ImportError("PyTorch is required for decode profiling")
+
+        generated_ids = input_ids.clone()
+
+        for token_idx in range(max_new_tokens):
+            # Reset layer profiler for fresh per-token metrics
+            if session.layer_profiler:
+                session.layer_profiler.reset()
+
+            section_name = f"token_{token_idx}"
+
+            with session.section(section_name, "decode"):
+                # Forward pass
+                output = model(generated_ids, return_dict=True, **model_kwargs)
+
+                # Get next token logits
+                next_token_logits = output.logits[:, -1, :] / temperature
+
+                # Apply sampling
+                if top_k > 0:
+                    indices_to_remove = next_token_logits < torch.topk(next_token_logits, top_k)[0][..., -1, None]
+                    next_token_logits[indices_to_remove] = float('-inf')
+
+                if top_p < 1.0:
+                    sorted_logits, sorted_indices = torch.sort(next_token_logits, descending=True)
+                    cumulative_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
+                    sorted_indices_to_remove = cumulative_probs > top_p
+                    sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
+                    sorted_indices_to_remove[..., 0] = 0
+                    indices_to_remove = sorted_indices_to_remove.scatter(1, sorted_indices, sorted_indices_to_remove)
+                    next_token_logits[indices_to_remove] = float('-inf')
+
+                # Sample next token
+                probs = F.softmax(next_token_logits, dim=-1)
+                next_token = torch.multinomial(probs, num_samples=1)
+
+                # Append to generated sequence
+                generated_ids = torch.cat([generated_ids, next_token], dim=-1)
+
+                # Update model kwargs
+                if hasattr(output, 'past_key_values') and output.past_key_values is not None:
+                    model_kwargs['past_key_values'] = output.past_key_values
+
+                # Get layer metrics
+                if session.layer_profiler:
+                    layer_timings = session.layer_profiler.get_timings()
+                    logger.debug(f"Token {token_idx}: Captured {len(layer_timings)} layer timings")
+
+                # Check for EOS token (assuming EOS token ID is 2)
+                if next_token.item() == 2:
+                    logger.info(f"EOS token generated at position {token_idx}")
+                    break
+
+        return generated_ids
+
 
 # Add section() method to ProfilingSession
 def _session_section(self, section_name: str, phase: str):

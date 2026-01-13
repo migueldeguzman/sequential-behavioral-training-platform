@@ -437,7 +437,7 @@
       "title": "InferencePipelineProfiler - Decode Phase",
       "description": "Profile decode phase (token generation loop)",
       "priority": "CRITICAL",
-      "passes": false,
+      "passes": true,
       "steps": [
         "Create per-token profiling within decode loop",
         "Profile embedding lookup per token",
