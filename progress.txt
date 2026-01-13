@@ -485,3 +485,52 @@ Features: powermetrics integration, per-layer/per-token profiling, SQLite storag
 - Verified Python syntax with py_compile (no errors)
 - Updated PRD: EP-018 passes = true
 
+### EP-019: InferencePipelineProfiler - Core Structure - COMPLETED
+- Created backend/profiling/pipeline_profiler.py with main orchestration profiler
+- Implemented InferencePipelineProfiler.__init__ accepting all profiler components
+  - PowerMonitor: for system power sampling (optional)
+  - LayerProfiler: for layer/component metrics (optional)
+  - DeepAttentionProfiler: for operation-level metrics (optional)
+  - ProfileDatabase: for storing profiling data (optional)
+- Implemented _generate_run_id() to create unique UUID4 identifiers
+- Implemented run() context manager for profiling session lifecycle
+  - Generates unique run_id at session start
+  - Starts power monitoring automatically
+  - Registers LayerProfiler hooks based on profiling_depth
+  - Patches DeepAttentionProfiler for deep profiling
+  - Yields ProfilingSession object for section timing
+  - Stops power monitoring and cleans up all hooks in finally block
+  - Saves complete profiling data to database automatically
+- Created ProfilingSession dataclass to hold run context
+  - Stores run_id, start_time, prompt, model_name, profiling_depth
+  - Stores experiment_name and tags for organization
+  - Collects sections list during profiling
+  - Holds references to profiler components for access
+- Created SectionTiming dataclass for pipeline section metrics
+  - Captures phase (pre_inference, prefill, decode, post_inference)
+  - Captures section_name, start_time, end_time, duration_ms
+  - Calculates energy_mj and avg_power_mw from power samples
+  - Stores power_samples that occurred during the section
+- Implemented section() context manager method on ProfilingSession
+  - Times individual pipeline sections automatically
+  - Correlates section timing with power samples for energy calculation
+  - Uses torch.mps.synchronize() on Apple Silicon for accurate timing
+  - Calculates energy by integrating power over time (trapezoidal rule)
+  - Stores SectionTiming in session.sections list
+  - Comprehensive logging for section start/complete events
+- Implemented _save_run_to_database() private method
+  - Calculates total duration and energy from power samples
+  - Creates profiling_runs record with all metadata
+  - Batch inserts all power samples with add_power_samples()
+  - Inserts all pipeline sections with add_pipeline_section()
+  - Handles missing database gracefully with warning
+  - Comprehensive error handling and logging throughout
+- Complete lifecycle management with automatic cleanup
+  - Ensures power monitoring stopped even on exceptions
+  - Ensures hooks removed even on exceptions
+  - Ensures patches removed even on exceptions
+  - finally block guarantees cleanup and database save
+- Thread-safe and supports concurrent profiling sessions
+- Verified Python syntax with py_compile (no errors)
+- Updated PRD: EP-019 passes = true
+

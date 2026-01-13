@@ -379,7 +379,7 @@
       "title": "InferencePipelineProfiler - Core Structure",
       "description": "Create main profiler orchestrating all components",
       "priority": "CRITICAL",
-      "passes": false,
+      "passes": true,
       "steps": [
         "Create backend/profiling/pipeline_profiler.py",
         "Implement InferencePipelineProfiler.__init__",
