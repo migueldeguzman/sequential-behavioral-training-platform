@@ -2536,3 +2536,28 @@ Implementation Details:
 - Python syntax validation: PASSED
 
 Updated PRD: EP-074 passes = true
+
+
+## 2026-01-14
+### EP-075: Prefill vs Decode Energy Analysis - COMPLETED
+- Added prefill_energy_mj, decode_energy_mj fields to profiling_runs table
+- Added input_token_count, output_token_count fields to profiling_runs table
+- Added energy_per_input_token_mj, energy_per_output_token_mj fields
+- Added input_output_energy_ratio field to track output/input energy ratio
+- Added is_input_token boolean field to tokens table to distinguish input vs output
+- Implemented update_run_metrics() method in ProfileDatabase to update run with final metrics
+- Updated add_token() and add_tokens_batch() to accept is_input_token parameter
+- Enhanced get_run_summary() to calculate input vs output token energy breakdown
+- Updated pipeline_profiler.py to calculate prefill vs decode energy from sections
+- Calculates energy per input/output token and ratio in _save_run_to_database()
+- Added token_energy_breakdown to ProfilingRunSummary TypeScript interface
+- Added energy_per_input_token_mj, energy_per_output_token_mj, input_output_energy_ratio to ProfilingRun interface
+- Created InputOutputEnergyComparison.tsx React component for visual comparison
+- Component displays side-by-side bars showing input vs output energy
+- Shows per-token energy metrics and output/input ratio (research shows ~11x)
+- TypeScript compilation: PASSED (npm run build successful)
+- Python syntax validation: PASSED
+
+Reference: Inspired by Caravaca et al. 2025 finding that output tokens consume 11x more energy than input tokens
+
+Updated PRD: EP-075 passes = true

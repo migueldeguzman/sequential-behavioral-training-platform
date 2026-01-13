@@ -98,6 +98,13 @@ class ProfileDatabase:
                 total_energy_mj REAL,
                 token_count INTEGER,
                 tokens_per_second REAL,
+                input_token_count INTEGER,
+                output_token_count INTEGER,
+                prefill_energy_mj REAL,
+                decode_energy_mj REAL,
+                energy_per_input_token_mj REAL,
+                energy_per_output_token_mj REAL,
+                input_output_energy_ratio REAL,
                 status TEXT DEFAULT 'running',
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
@@ -147,6 +154,7 @@ class ProfileDatabase:
                 duration_ms REAL NOT NULL,
                 energy_mj REAL,
                 avg_power_mw REAL,
+                is_input_token BOOLEAN NOT NULL DEFAULT 0,
                 FOREIGN KEY (run_id) REFERENCES profiling_runs(run_id) ON DELETE CASCADE
             )
         """)
@@ -309,6 +317,88 @@ class ProfileDatabase:
         logger.info(f"Created profiling run {run_id}")
         return cursor.lastrowid
 
+    def update_run_metrics(
+        self,
+        run_id: str,
+        total_duration_ms: Optional[float] = None,
+        total_energy_mj: Optional[float] = None,
+        token_count: Optional[int] = None,
+        tokens_per_second: Optional[float] = None,
+        input_token_count: Optional[int] = None,
+        output_token_count: Optional[int] = None,
+        prefill_energy_mj: Optional[float] = None,
+        decode_energy_mj: Optional[float] = None,
+        energy_per_input_token_mj: Optional[float] = None,
+        energy_per_output_token_mj: Optional[float] = None,
+        input_output_energy_ratio: Optional[float] = None,
+        status: str = "completed",
+    ) -> None:
+        """Update run with final metrics.
+
+        Args:
+            run_id: Run identifier
+            total_duration_ms: Total inference duration
+            total_energy_mj: Total energy consumed
+            token_count: Total number of tokens generated
+            tokens_per_second: Generation throughput
+            input_token_count: Number of input/prompt tokens
+            output_token_count: Number of output/generated tokens
+            prefill_energy_mj: Energy consumed during prefill phase
+            decode_energy_mj: Energy consumed during decode phase
+            energy_per_input_token_mj: Average energy per input token
+            energy_per_output_token_mj: Average energy per output token
+            input_output_energy_ratio: Ratio of output to input token energy
+            status: Run status (default: 'completed')
+        """
+        cursor = self.conn.cursor()
+
+        # Build dynamic UPDATE statement based on provided values
+        updates = []
+        values = []
+
+        if total_duration_ms is not None:
+            updates.append("total_duration_ms = ?")
+            values.append(total_duration_ms)
+        if total_energy_mj is not None:
+            updates.append("total_energy_mj = ?")
+            values.append(total_energy_mj)
+        if token_count is not None:
+            updates.append("token_count = ?")
+            values.append(token_count)
+        if tokens_per_second is not None:
+            updates.append("tokens_per_second = ?")
+            values.append(tokens_per_second)
+        if input_token_count is not None:
+            updates.append("input_token_count = ?")
+            values.append(input_token_count)
+        if output_token_count is not None:
+            updates.append("output_token_count = ?")
+            values.append(output_token_count)
+        if prefill_energy_mj is not None:
+            updates.append("prefill_energy_mj = ?")
+            values.append(prefill_energy_mj)
+        if decode_energy_mj is not None:
+            updates.append("decode_energy_mj = ?")
+            values.append(decode_energy_mj)
+        if energy_per_input_token_mj is not None:
+            updates.append("energy_per_input_token_mj = ?")
+            values.append(energy_per_input_token_mj)
+        if energy_per_output_token_mj is not None:
+            updates.append("energy_per_output_token_mj = ?")
+            values.append(energy_per_output_token_mj)
+        if input_output_energy_ratio is not None:
+            updates.append("input_output_energy_ratio = ?")
+            values.append(input_output_energy_ratio)
+
+        updates.append("status = ?")
+        values.append(status)
+        values.append(run_id)
+
+        query = f"UPDATE profiling_runs SET {', '.join(updates)} WHERE run_id = ?"
+        cursor.execute(query, values)
+        self.conn.commit()
+        logger.info(f"Updated profiling run {run_id} with final metrics")
+
     def add_power_samples(self, run_id: str, samples: list[dict]) -> None:
         """Batch insert power samples for a run.
 
@@ -447,6 +537,7 @@ class ProfileDatabase:
         duration_ms: float,
         energy_mj: Optional[float] = None,
         avg_power_mw: Optional[float] = None,
+        is_input_token: bool = False,
     ) -> int:
         """Add a token with its metrics.
 
@@ -460,6 +551,7 @@ class ProfileDatabase:
             duration_ms: Token generation duration
             energy_mj: Energy consumed
             avg_power_mw: Average power
+            is_input_token: True if this is an input token (prefill), False if output (decode)
 
         Returns:
             Database row ID of created token
@@ -469,10 +561,10 @@ class ProfileDatabase:
             """
             INSERT INTO tokens (
                 run_id, token_index, token_text, phase, start_time_ms,
-                end_time_ms, duration_ms, energy_mj, avg_power_mw
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                end_time_ms, duration_ms, energy_mj, avg_power_mw, is_input_token
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (run_id, token_index, token_text, phase, start_time_ms, end_time_ms, duration_ms, energy_mj, avg_power_mw),
+            (run_id, token_index, token_text, phase, start_time_ms, end_time_ms, duration_ms, energy_mj, avg_power_mw, is_input_token),
         )
         # Defer commit for batch operations
         logger.debug(f"Added token {token_index} for run {run_id}")
@@ -484,7 +576,7 @@ class ProfileDatabase:
         Args:
             run_id: Run identifier
             tokens: List of token dicts with keys:
-                token_index, token_text, phase, start_time_ms, end_time_ms, duration_ms, energy_mj, avg_power_mw
+                token_index, token_text, phase, start_time_ms, end_time_ms, duration_ms, energy_mj, avg_power_mw, is_input_token
 
         Returns:
             List of database row IDs for created tokens
@@ -496,8 +588,8 @@ class ProfileDatabase:
                 """
                 INSERT INTO tokens (
                     run_id, token_index, token_text, phase, start_time_ms,
-                    end_time_ms, duration_ms, energy_mj, avg_power_mw
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    end_time_ms, duration_ms, energy_mj, avg_power_mw, is_input_token
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     run_id,
@@ -509,6 +601,7 @@ class ProfileDatabase:
                     token["duration_ms"],
                     token.get("energy_mj"),
                     token.get("avg_power_mw"),
+                    token.get("is_input_token", False),
                 ),
             )
             token_ids.append(cursor.lastrowid)
@@ -789,6 +882,41 @@ class ProfileDatabase:
         # Identify hottest components (top 10 by energy)
         if components:
             summary["hottest_components"] = [dict(comp) for comp in components[:10]]
+
+        # Get input vs output token energy breakdown
+        cursor.execute(
+            """
+            SELECT
+                SUM(CASE WHEN is_input_token = 1 THEN energy_mj ELSE 0 END) as input_energy_mj,
+                SUM(CASE WHEN is_input_token = 0 THEN energy_mj ELSE 0 END) as output_energy_mj,
+                SUM(CASE WHEN is_input_token = 1 THEN 1 ELSE 0 END) as input_token_count,
+                SUM(CASE WHEN is_input_token = 0 THEN 1 ELSE 0 END) as output_token_count
+            FROM tokens
+            WHERE run_id = ?
+            """,
+            (run_id,)
+        )
+        token_breakdown = cursor.fetchone()
+        if token_breakdown:
+            breakdown = dict(token_breakdown)
+            # Calculate per-token metrics
+            if breakdown["input_token_count"] and breakdown["input_token_count"] > 0:
+                breakdown["energy_per_input_token_mj"] = breakdown["input_energy_mj"] / breakdown["input_token_count"]
+            else:
+                breakdown["energy_per_input_token_mj"] = 0
+
+            if breakdown["output_token_count"] and breakdown["output_token_count"] > 0:
+                breakdown["energy_per_output_token_mj"] = breakdown["output_energy_mj"] / breakdown["output_token_count"]
+            else:
+                breakdown["energy_per_output_token_mj"] = 0
+
+            # Calculate ratio (output / input energy per token)
+            if breakdown["energy_per_input_token_mj"] and breakdown["energy_per_input_token_mj"] > 0:
+                breakdown["output_to_input_energy_ratio"] = breakdown["energy_per_output_token_mj"] / breakdown["energy_per_input_token_mj"]
+            else:
+                breakdown["output_to_input_energy_ratio"] = 0
+
+            summary["token_energy_breakdown"] = breakdown
 
         return summary
 

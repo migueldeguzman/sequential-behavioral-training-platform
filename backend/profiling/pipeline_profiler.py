@@ -380,9 +380,34 @@ class InferencePipelineProfiler:
                 energy_mj = avg_power_mw * time_interval_ms / 1000.0  # Convert to mJ
                 total_energy_mj += energy_mj
 
-        # Calculate tokens per second (placeholder - will be filled by caller)
-        token_count = 0  # Will be updated by token-level profiling
-        tokens_per_second = 0.0
+        # Calculate prefill vs decode energy from sections
+        prefill_energy_mj = 0.0
+        decode_energy_mj = 0.0
+        input_token_count = 0
+        output_token_count = 0
+
+        for section in session.sections:
+            if section.phase == "prefill" and section.energy_mj:
+                prefill_energy_mj += section.energy_mj
+                # Count input tokens from prefill phase (usually one section for all input tokens)
+                if "prefill" in section.section_name or "embedding" in section.section_name:
+                    input_token_count = 1  # Will be updated below
+            elif section.phase == "decode" and section.energy_mj:
+                decode_energy_mj += section.energy_mj
+                # Count output tokens from decode phase
+                if "token_" in section.section_name:
+                    output_token_count += 1
+
+        # Calculate per-token energy metrics
+        energy_per_input_token_mj = prefill_energy_mj / input_token_count if input_token_count > 0 else 0.0
+        energy_per_output_token_mj = decode_energy_mj / output_token_count if output_token_count > 0 else 0.0
+
+        # Calculate ratio (paper shows output tokens are ~11x more energy than input)
+        input_output_energy_ratio = energy_per_output_token_mj / energy_per_input_token_mj if energy_per_input_token_mj > 0 else 0.0
+
+        # Calculate tokens per second
+        token_count = input_token_count + output_token_count
+        tokens_per_second = token_count / (total_duration_ms / 1000.0) if total_duration_ms > 0 else 0.0
 
         # Create run record
         timestamp = datetime.fromtimestamp(session.start_time).isoformat()
@@ -396,6 +421,23 @@ class InferencePipelineProfiler:
             experiment_name=session.experiment_name,
             tags=session.tags,
             profiling_depth=session.profiling_depth
+        )
+
+        # Update run with calculated metrics
+        self.database.update_run_metrics(
+            run_id=session.run_id,
+            total_duration_ms=total_duration_ms,
+            total_energy_mj=total_energy_mj,
+            token_count=token_count,
+            tokens_per_second=tokens_per_second,
+            input_token_count=input_token_count,
+            output_token_count=output_token_count,
+            prefill_energy_mj=prefill_energy_mj,
+            decode_energy_mj=decode_energy_mj,
+            energy_per_input_token_mj=energy_per_input_token_mj,
+            energy_per_output_token_mj=energy_per_output_token_mj,
+            input_output_energy_ratio=input_output_energy_ratio,
+            status="completed"
         )
 
         # Save power samples
@@ -443,9 +485,13 @@ class InferencePipelineProfiler:
                 run_id=session.run_id,
                 token_index=token_index,
                 token_text=None,  # Will be populated when decode loop stores token text
+                phase="decode",
+                start_time_ms=token_section.start_time * 1000.0,
+                end_time_ms=token_section.end_time * 1000.0,
                 duration_ms=token_section.duration_ms,
                 energy_mj=token_section.energy_mj,
-                avg_power_mw=token_section.avg_power_mw
+                avg_power_mw=token_section.avg_power_mw,
+                is_input_token=False  # Decode tokens are output tokens
             )
 
         # Save layer metrics (per-layer per-token profiling data)

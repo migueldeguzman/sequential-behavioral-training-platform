@@ -1227,7 +1227,7 @@
       "title": "Prefill vs Decode Energy Analysis",
       "description": "Separate tracking and analysis of prefill vs decode phase energy (paper shows output tokens ~11x more costly than input)",
       "priority": "HIGH",
-      "passes": false,
+      "passes": true,
       "reference": "Paper finding: Output tokens consume 11x more energy than input tokens for same count",
       "steps": [
         "Track total energy for prefill phase separately",

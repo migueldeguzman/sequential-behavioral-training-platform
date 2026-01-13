@@ -251,6 +251,9 @@ export interface ProfilingRun {
   // Calculated metrics
   prefill_energy_mj?: number;
   decode_energy_mj?: number;
+  energy_per_input_token_mj?: number;
+  energy_per_output_token_mj?: number;
+  input_output_energy_ratio?: number;
   joules_per_token?: number;
   joules_per_input_token?: number;
   joules_per_output_token?: number;
@@ -297,6 +300,15 @@ export interface ProfilingRunSummary {
     tokens_per_second: number;
     tokens_per_joule: number;
     energy_delay_product: number;
+  };
+  token_energy_breakdown?: {
+    input_energy_mj: number;
+    output_energy_mj: number;
+    input_token_count: number;
+    output_token_count: number;
+    energy_per_input_token_mj: number;
+    energy_per_output_token_mj: number;
+    output_to_input_energy_ratio: number;
   };
   component_energy_breakdown: {
     cpu_energy_mj: number;
