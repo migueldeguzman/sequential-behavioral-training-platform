@@ -53,6 +53,7 @@ SectionEventCallback = Optional[callable]  # Callback signature: callback(event_
 TokenCompleteCallback = Optional[callable]  # Callback signature: callback(token_data: dict)
 LayerMetricsCallback = Optional[callable]  # Callback signature: callback(layer_metrics_data: dict)
 ComponentMetricsCallback = Optional[callable]  # Callback signature: callback(component_metrics_data: dict)
+InferenceCompleteCallback = Optional[callable]  # Callback signature: callback(inference_complete_data: dict)
 
 
 @dataclass
@@ -94,6 +95,7 @@ class ProfilingSession:
     token_complete_callback: TokenCompleteCallback = None
     layer_metrics_callback: LayerMetricsCallback = None
     component_metrics_callback: ComponentMetricsCallback = None
+    inference_complete_callback: InferenceCompleteCallback = None
 
 
 class InferencePipelineProfiler:
@@ -114,7 +116,8 @@ class InferencePipelineProfiler:
         section_event_callback: SectionEventCallback = None,
         token_complete_callback: TokenCompleteCallback = None,
         layer_metrics_callback: LayerMetricsCallback = None,
-        component_metrics_callback: ComponentMetricsCallback = None
+        component_metrics_callback: ComponentMetricsCallback = None,
+        inference_complete_callback: InferenceCompleteCallback = None
     ):
         """
         Initialize the inference pipeline profiler.
@@ -129,6 +132,7 @@ class InferencePipelineProfiler:
             token_complete_callback: Optional callback for streaming token completion events (for WebSocket)
             layer_metrics_callback: Optional callback for streaming layer metrics (for WebSocket)
             component_metrics_callback: Optional callback for streaming component metrics (for WebSocket)
+            inference_complete_callback: Optional callback for streaming inference completion (for WebSocket)
         """
         self.power_monitor = power_monitor
         self.layer_profiler = layer_profiler
@@ -139,6 +143,7 @@ class InferencePipelineProfiler:
         self.token_complete_callback = token_complete_callback
         self.layer_metrics_callback = layer_metrics_callback
         self.component_metrics_callback = component_metrics_callback
+        self.inference_complete_callback = inference_complete_callback
 
         # Current active session
         self._current_session: Optional[ProfilingSession] = None
@@ -248,7 +253,8 @@ class InferencePipelineProfiler:
             section_event_callback=self.section_event_callback,
             token_complete_callback=self.token_complete_callback,
             layer_metrics_callback=self.layer_metrics_callback,
-            component_metrics_callback=self.component_metrics_callback
+            component_metrics_callback=self.component_metrics_callback,
+            inference_complete_callback=self.inference_complete_callback
         )
 
         # Store as current session
@@ -332,6 +338,13 @@ class InferencePipelineProfiler:
                     logger.info(f"Profiling run {run_id} saved to database")
                 except Exception as e:
                     logger.error(f"Failed to save run to database: {e}")
+
+            # Emit inference_complete event
+            if self.inference_complete_callback:
+                try:
+                    self._emit_inference_complete_event(session)
+                except Exception as e:
+                    logger.error(f"Failed to emit inference_complete event: {e}")
 
             # Clear current session
             self._current_session = None
@@ -577,6 +590,69 @@ class InferencePipelineProfiler:
                    f"{len(session.sections)} sections, "
                    f"{len(token_sections)} tokens, "
                    f"{len(component_aggregates)} component types")
+
+    def _emit_inference_complete_event(self, session: ProfilingSession) -> None:
+        """
+        Emit inference_complete event via WebSocket callback.
+
+        This is called at the end of a profiling run to stream final summary statistics.
+
+        Args:
+            session: Completed ProfilingSession with all collected data
+        """
+        if not self.inference_complete_callback:
+            return
+
+        # Calculate total duration and energy
+        end_time = time.time()
+        total_duration_ms = (end_time - session.start_time) * 1000.0
+
+        # Calculate total energy from power samples
+        total_energy_mj = 0.0
+        power_samples = []
+
+        if self.power_monitor:
+            samples = self.power_monitor.get_samples()
+            power_samples = samples
+
+            # Calculate energy: integrate power over time
+            for i in range(len(samples) - 1):
+                time_interval_ms = samples[i + 1].relative_time_ms - samples[i].relative_time_ms
+                avg_power_mw = (samples[i].total_power_mw + samples[i + 1].total_power_mw) / 2.0
+                energy_mj = avg_power_mw * time_interval_ms / 1000.0
+                total_energy_mj += energy_mj
+
+        # Calculate token count from decode sections
+        token_sections = [s for s in session.sections if s.phase == "decode" and "token_" in s.section_name]
+        token_count = len(token_sections)
+
+        # Calculate tokens per second
+        tokens_per_second = (token_count / total_duration_ms * 1000.0) if total_duration_ms > 0 and token_count > 0 else 0.0
+
+        # Build summary statistics
+        inference_complete_data = {
+            "run_id": session.run_id,
+            "total_duration_ms": total_duration_ms,
+            "total_energy_mj": total_energy_mj,
+            "token_count": token_count,
+            "tokens_per_second": tokens_per_second,
+            "summary_statistics": {
+                "num_power_samples": len(power_samples),
+                "num_sections": len(session.sections),
+                "num_tokens": token_count,
+                "avg_power_mw": (total_energy_mj / total_duration_ms * 1000.0) if total_duration_ms > 0 else 0.0,
+                "energy_per_token_mj": (total_energy_mj / token_count) if token_count > 0 else None
+            },
+            "timestamp": end_time
+        }
+
+        # Emit via callback
+        try:
+            self.inference_complete_callback(inference_complete_data)
+            logger.info(f"Emitted inference_complete event for run {session.run_id}: "
+                       f"{total_duration_ms:.2f}ms, {total_energy_mj:.2f}mJ, {token_count} tokens")
+        except Exception as e:
+            logger.error(f"Error in inference_complete callback: {e}")
 
     # Pre-Inference Phase Profiling Helpers
     def profile_tokenization(self, session: ProfilingSession, tokenizer, prompt: str):

@@ -667,7 +667,7 @@
       "title": "WebSocket Profiling - Inference Complete",
       "description": "Stream final summary on inference completion",
       "priority": "HIGH",
-      "passes": false,
+      "passes": true,
       "steps": [
         "Create inference_complete message type",
         "Include run_id for database reference",

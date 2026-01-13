@@ -1429,3 +1429,52 @@ Features: powermetrics integration, per-layer/per-token profiling, SQLite storag
   ✓ Included full activation statistics
 - Verified Python syntax with py_compile for both files (no errors)
 - Updated PRD: EP-038 passes = true
+### EP-039: WebSocket Profiling - Inference Complete - COMPLETED
+- Enhanced InferencePipelineProfiler to support inference completion event streaming
+- Added InferenceCompleteCallback type definition to pipeline_profiler.py (line 56)
+  - Callback signature: callback(inference_complete_data: dict)
+- Added inference_complete_callback parameter to InferencePipelineProfiler.__init__ (line 120)
+  - Optional callback function for streaming inference completion summary
+- Added inference_complete_callback field to ProfilingSession dataclass (line 98)
+  - Stores callback reference for access at completion
+- Updated run() context manager to pass callback to session (line 257)
+- Enhanced run() finally block to emit inference_complete event (lines 342-347)
+  - Calls _emit_inference_complete_event() after database save
+  - Ensures summary is sent even if partial failures occur
+- Implemented _emit_inference_complete_event() method (pipeline_profiler.py:594-655)
+  - Emits inference_complete event via WebSocket callback
+  - Includes run_id: Unique identifier for database reference
+  - Includes total_duration_ms: Total inference duration in milliseconds
+  - Includes total_energy_mj: Total energy consumption in millijoules
+  - Includes token_count: Number of tokens generated during decode phase
+  - Includes tokens_per_second: Throughput metric (tokens/s)
+  - Includes summary_statistics: Comprehensive profiling summary
+    * num_power_samples: Count of power measurements collected
+    * num_sections: Count of pipeline sections profiled
+    * num_tokens: Number of tokens generated
+    * avg_power_mw: Average power draw across entire inference
+    * energy_per_token_mj: Average energy per token (mJ/token)
+  - Calculates token count from decode sections (sections with "token_" in name)
+  - Calculates total energy by integrating power over time (trapezoidal rule)
+  - Comprehensive error handling prevents callback failures from affecting profiling
+- Integrated WebSocket streaming with /api/profiling/generate endpoint (main.py:1748-1767)
+  - Defined stream_inference_complete() callback function
+  - Creates INFERENCE_COMPLETE message with all summary metrics
+  - Message includes:
+    * type: ProfilingMessageType.INFERENCE_COMPLETE
+    * timestamp: Absolute timestamp of completion
+    * data: run_id, total_duration_ms, total_energy_mj, token_count, tokens_per_second, summary_statistics
+  - Broadcasts message to all connected WebSocket clients via profiling_manager
+  - Uses asyncio.create_task() for non-blocking async broadcast
+  - Comprehensive error handling for streaming failures
+- Updated InferencePipelineProfiler instantiation with new callback (line 1780)
+- All EP-039 requirements fulfilled:
+  ✓ Created inference_complete message type (ProfilingMessageType.INFERENCE_COMPLETE)
+  ✓ Included run_id for database reference
+  ✓ Included total duration and energy
+  ✓ Included token count and tokens/second
+  ✓ Included summary statistics
+- Inference complete event automatically sent at end of profiling session
+- Provides final summary to clients for displaying completion status and metrics
+- Verified Python syntax with py_compile for both files (no errors)
+- Updated PRD: EP-039 passes = true

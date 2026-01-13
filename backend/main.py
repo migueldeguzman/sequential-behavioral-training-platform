@@ -1745,6 +1745,27 @@ async def profiled_generate(request: ProfiledGenerateRequest):
             except Exception as e:
                 logger.error(f"Failed to stream component metrics event: {e}")
 
+        # Define inference complete callback for WebSocket streaming
+        def stream_inference_complete(inference_complete_data):
+            """Callback to stream inference complete event via WebSocket"""
+            try:
+                message = {
+                    "type": ProfilingMessageType.INFERENCE_COMPLETE,
+                    "timestamp": inference_complete_data.get("timestamp"),
+                    "data": {
+                        "run_id": inference_complete_data.get("run_id"),
+                        "total_duration_ms": inference_complete_data.get("total_duration_ms"),
+                        "total_energy_mj": inference_complete_data.get("total_energy_mj"),
+                        "token_count": inference_complete_data.get("token_count"),
+                        "tokens_per_second": inference_complete_data.get("tokens_per_second"),
+                        "summary_statistics": inference_complete_data.get("summary_statistics")
+                    }
+                }
+                # Broadcast to all connected WebSocket clients
+                asyncio.create_task(profiling_manager.broadcast(message))
+            except Exception as e:
+                logger.error(f"Failed to stream inference complete event: {e}")
+
         # Create pipeline profiler with streaming callbacks
         profiler = InferencePipelineProfiler(
             power_monitor=power_monitor,
@@ -1755,7 +1776,8 @@ async def profiled_generate(request: ProfiledGenerateRequest):
             section_event_callback=stream_section_event,
             token_complete_callback=stream_token_complete,
             layer_metrics_callback=stream_layer_metrics,
-            component_metrics_callback=stream_component_metrics
+            component_metrics_callback=stream_component_metrics,
+            inference_complete_callback=stream_inference_complete
         )
 
         # Start profiling session
