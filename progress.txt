@@ -1531,3 +1531,47 @@ Features: powermetrics integration, per-layer/per-token profiling, SQLite storag
 - All types align with backend database schema and API contracts
 - Verified TypeScript compilation with npm run build (successful)
 - Updated PRD: EP-040 passes = true
+
+### EP-041: Frontend - API Client Extensions - COMPLETED
+- Added comprehensive profilingApi object to src/lib/api.ts with all 7 profiling API methods
+- Implemented profiledGenerate() method (lines 245-250)
+  - Accepts ProfiledGenerateRequest with prompt, modelPath, profilingDepth, tags, experimentName
+  - Returns runId, response text, and success message
+  - POST request to /api/profiling/generate
+- Implemented getProfilingRuns() method with comprehensive filtering (lines 253-274)
+  - Accepts optional ProfilingRunsFilter with model, date_from, date_to, tags, experiment, limit, offset, sort_by
+  - Converts tags array to comma-separated string for query parameter
+  - Builds URLSearchParams dynamically based on provided filters
+  - Returns runs array, total count, limit, and offset
+  - GET request to /api/profiling/runs with query parameters
+- Implemented getProfilingRun() method for full run details (lines 277-284)
+  - Accepts run_id parameter
+  - Returns complete nested data structure: run metadata, power_samples, pipeline_sections, tokens
+  - Uses properly typed PowerSample[] and TokenMetrics[] (no any types)
+  - GET request to /api/profiling/run/{id}
+- Implemented getProfilingRunSummary() method for aggregated stats (lines 287-288)
+  - Accepts run_id parameter
+  - Returns ProfilingRunSummary with phase breakdown, layer averages, component averages, hottest components
+  - GET request to /api/profiling/run/{id}/summary
+- Implemented getProfilingPipeline() method for hierarchical breakdown (lines 291-304)
+  - Accepts run_id parameter
+  - Returns phases array with nested sections, duration/energy totals, percentages
+  - Includes total_duration_ms and total_energy_mj at top level
+  - GET request to /api/profiling/run/{id}/pipeline
+- Implemented exportProfilingRun() method for data export (lines 307-310)
+  - Accepts run_id and format ("json" or "csv")
+  - Returns download URL string (not a fetch call)
+  - Client can use URL directly in <a> tag or window.open()
+  - URL format: /api/profiling/export/{id}?format={format}
+- Implemented deleteProfilingRun() method for run deletion (lines 313-316)
+  - Accepts run_id parameter
+  - Returns success boolean, message, and echo of run_id
+  - DELETE request to /api/profiling/run/{id}
+- Added necessary TypeScript type imports:
+  - ProfiledGenerateRequest, ProfilingRun, ProfilingRunSummary, PipelineSection
+  - ProfilingRunsFilter, PowerSample, TokenMetrics
+- All methods use strongly typed responses with proper interfaces
+- Fixed TypeScript linting errors by replacing any types with PowerSample[] and TokenMetrics[]
+- Fixed tags parameter conversion from string[] to comma-separated string with .join(",")
+- Verified TypeScript compilation with npm run build (successful)
+- Updated PRD: EP-041 passes = true

@@ -12,6 +12,13 @@ import type {
   InferenceConfig,
   InferenceResult,
   ExportableQAPair,
+  ProfiledGenerateRequest,
+  ProfilingRun,
+  ProfilingRunSummary,
+  PipelineSection,
+  ProfilingRunsFilter,
+  PowerSample,
+  TokenMetrics,
 } from "@/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -232,5 +239,81 @@ export const inferenceApi = {
     fetchApi<{ data: ExportableQAPair[] | string; filename: string }>("/api/inference/export", {
       method: "POST",
       body: JSON.stringify({ results, format }),
+    }),
+};
+
+// Profiling API
+export const profilingApi = {
+  // Start profiled inference with energy tracking
+  profiledGenerate: (request: ProfiledGenerateRequest) =>
+    fetchApi<{ runId: string; response: string; message: string }>("/api/profiling/generate", {
+      method: "POST",
+      body: JSON.stringify(request),
+    }),
+
+  // Get list of profiling runs with optional filters
+  getProfilingRuns: (filter?: ProfilingRunsFilter) => {
+    const params = new URLSearchParams();
+    if (filter?.model) params.append("model", filter.model);
+    if (filter?.date_from) params.append("date_from", filter.date_from);
+    if (filter?.date_to) params.append("date_to", filter.date_to);
+    if (filter?.tags && filter.tags.length > 0) params.append("tags", filter.tags.join(","));
+    if (filter?.experiment) params.append("experiment", filter.experiment);
+    if (filter?.limit) params.append("limit", filter.limit.toString());
+    if (filter?.offset) params.append("offset", filter.offset.toString());
+    if (filter?.sort_by) params.append("sort_by", filter.sort_by);
+
+    const queryString = params.toString();
+    const endpoint = queryString ? `/api/profiling/runs?${queryString}` : "/api/profiling/runs";
+
+    return fetchApi<{
+      runs: ProfilingRun[];
+      total: number;
+      limit: number;
+      offset: number;
+    }>(endpoint);
+  },
+
+  // Get complete profiling run data with all nested metrics
+  getProfilingRun: (id: string) =>
+    fetchApi<{
+      run: ProfilingRun;
+      power_samples: PowerSample[];
+      pipeline_sections: PipelineSection[];
+      tokens: TokenMetrics[];
+    }>(`/api/profiling/run/${id}`),
+
+  // Get aggregated summary statistics for a profiling run
+  getProfilingRunSummary: (id: string) =>
+    fetchApi<ProfilingRunSummary>(`/api/profiling/run/${id}/summary`),
+
+  // Get hierarchical pipeline section breakdown
+  getProfilingPipeline: (id: string) =>
+    fetchApi<{
+      run_id: string;
+      total_duration_ms: number;
+      total_energy_mj: number;
+      phases: Array<{
+        phase: string;
+        sections: PipelineSection[];
+        total_duration_ms: number;
+        total_energy_mj: number;
+        avg_power_mw: number;
+        section_count: number;
+        duration_percentage: number;
+        energy_percentage: number;
+      }>;
+    }>(`/api/profiling/run/${id}/pipeline`),
+
+  // Export profiling run data (returns blob URL for download)
+  exportProfilingRun: (id: string, format: "json" | "csv") => {
+    const url = `${API_BASE}/api/profiling/export/${id}?format=${format}`;
+    return url;
+  },
+
+  // Delete profiling run and all related data
+  deleteProfilingRun: (id: string) =>
+    fetchApi<{ success: boolean; message: string; run_id: string }>(`/api/profiling/run/${id}`, {
+      method: "DELETE",
     }),
 };

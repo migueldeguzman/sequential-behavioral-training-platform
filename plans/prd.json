@@ -698,7 +698,7 @@
       "title": "Frontend - API Client Extensions",
       "description": "Add profiling API methods to api.ts",
       "priority": "HIGH",
-      "passes": false,
+      "passes": true,
       "steps": [
         "Add profiledGenerate() method",
         "Add getProfilingRuns() method with filters",
