@@ -921,7 +921,7 @@
       "title": "Frontend - TreemapChart Component",
       "description": "Create hierarchical treemap visualization",
       "priority": "MEDIUM",
-      "passes": false,
+      "passes": true,
       "steps": [
         "Create src/components/profiling/charts/TreemapChart.tsx",
         "Use D3.js treemap layout",

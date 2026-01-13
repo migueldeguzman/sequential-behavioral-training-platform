@@ -2039,3 +2039,25 @@ Implementation details:
 - Calculates total duration and energy per phase
 - TypeScript compilation verified with npm run build (successful)
 - Updated PRD: EP-054 passes = true
+
+2026-01-14 - EP-055: TreemapChart Component - COMPLETE
+- Created hierarchical treemap visualization for energy distribution analysis
+- Features implemented:
+  - D3.js treemap layout for hierarchical data visualization
+  - Rectangle sizing based on selected metric (time/energy/power)
+  - Color-coded by component category (attention/mlp/layernorm/embedding/other)
+  - Interactive zoom: click cells to drill down into children
+  - Breadcrumb navigation to navigate back through hierarchy
+  - Smart label display: name, percentage, and value shown based on cell size
+  - Five-color gradient scale for different component categories
+  - Legend showing category color mapping
+  - Hover effects with opacity changes for better UX
+  - Responsive layout with configurable width/height
+  - Custom title showing current metric
+  - Help text explaining interaction pattern
+- Component accepts hierarchical data structure with name, value, children
+- Calculates and displays percentage of total for each cell
+- Formats values based on metric type (ms/mJ/mW)
+- TypeScript types properly defined with d3.HierarchyRectangularNode
+- TypeScript compilation verified with npm run build (successful)
+- Updated PRD: EP-055 passes = true
