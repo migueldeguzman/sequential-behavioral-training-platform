@@ -325,7 +325,170 @@ class InferencePipelineProfiler:
                 avg_power_mw=section.avg_power_mw
             )
 
-        logger.info(f"Saved run {session.run_id} with {len(power_samples)} power samples and {len(session.sections)} sections")
+        # Save tokens with metrics
+        # Note: Token-level saving is phase-specific and should be done during decode phase
+        # For now, we collect decode sections which represent tokens
+        token_sections = [s for s in session.sections if s.phase == "decode" and "token_" in s.section_name]
+        for idx, token_section in enumerate(token_sections):
+            # Extract token index from section name (e.g., "decode_token_0" -> 0)
+            try:
+                token_index = int(token_section.section_name.split("_")[-1])
+            except (IndexError, ValueError):
+                token_index = idx
+
+            # Add token with basic metrics
+            # Note: token_text and layer metrics will be added in future enhancements
+            token_id = self.database.add_token(
+                run_id=session.run_id,
+                token_index=token_index,
+                token_text=None,  # Will be populated when decode loop stores token text
+                duration_ms=token_section.duration_ms,
+                energy_mj=token_section.energy_mj,
+                avg_power_mw=token_section.avg_power_mw
+            )
+
+        # Save layer metrics (per-layer per-token profiling data)
+        if self.layer_profiler:
+            layer_timings = self.layer_profiler.get_timings()
+            if layer_timings:
+                layer_metric_dicts = []
+                for timing in layer_timings:
+                    layer_metric_dicts.append({
+                        "layer_index": timing.layer_index,
+                        "component_name": timing.component_name,
+                        "duration_ms": timing.duration_ms,
+                        "activation_mean": timing.activation_mean,
+                        "activation_std": timing.activation_std,
+                        "activation_max": timing.activation_max,
+                        "activation_sparsity": timing.activation_sparsity
+                    })
+
+                # Batch insert layer metrics
+                # Note: These are associated with the run, not individual tokens
+                # For per-token layer metrics, would need token_id foreign key
+                # For now, we save them at run level
+                self.database.add_layer_metrics(
+                    run_id=session.run_id,
+                    token_id=None,  # Run-level metrics (will enhance for per-token in future)
+                    metrics=layer_metric_dicts
+                )
+                logger.debug(f"Saved {len(layer_metric_dicts)} layer metrics")
+
+        # Save component metrics (aggregated by component type)
+        # Aggregate layer timings by component name
+        component_aggregates = {}
+        if self.layer_profiler:
+            layer_timings = self.layer_profiler.get_timings()
+            for timing in layer_timings:
+                comp_name = timing.component_name
+                if comp_name not in component_aggregates:
+                    component_aggregates[comp_name] = {
+                        "total_duration_ms": 0.0,
+                        "count": 0,
+                        "sum_activation_mean": 0.0,
+                        "sum_activation_std": 0.0,
+                        "sum_activation_max": 0.0,
+                        "sum_activation_sparsity": 0.0
+                    }
+
+                agg = component_aggregates[comp_name]
+                agg["total_duration_ms"] += timing.duration_ms
+                agg["count"] += 1
+                if timing.activation_mean is not None:
+                    agg["sum_activation_mean"] += timing.activation_mean
+                if timing.activation_std is not None:
+                    agg["sum_activation_std"] += timing.activation_std
+                if timing.activation_max is not None:
+                    agg["sum_activation_max"] += timing.activation_max
+                if timing.activation_sparsity is not None:
+                    agg["sum_activation_sparsity"] += timing.activation_sparsity
+
+        # Convert aggregates to component metrics and batch insert
+        if component_aggregates:
+            component_metric_dicts = []
+            for comp_name, agg in component_aggregates.items():
+                count = agg["count"]
+                component_metric_dicts.append({
+                    "component_name": comp_name,
+                    "total_duration_ms": agg["total_duration_ms"],
+                    "call_count": count,
+                    "avg_duration_ms": agg["total_duration_ms"] / count,
+                    "avg_activation_mean": agg["sum_activation_mean"] / count if count > 0 else None,
+                    "avg_activation_std": agg["sum_activation_std"] / count if count > 0 else None,
+                    "avg_activation_max": agg["sum_activation_max"] / count if count > 0 else None,
+                    "avg_activation_sparsity": agg["sum_activation_sparsity"] / count if count > 0 else None
+                })
+
+            self.database.add_component_metrics(
+                run_id=session.run_id,
+                layer_metric_id=None,  # Run-level aggregated metrics
+                metrics=component_metric_dicts
+            )
+            logger.debug(f"Saved {len(component_metric_dicts)} component metrics")
+
+        # Save deep operation metrics if deep profiling was enabled
+        if self.deep_profiler and session.profiling_depth == "deep":
+            deep_metric_dicts = []
+
+            # Collect attention operation metrics
+            attention_metrics = self.deep_profiler.get_metrics()
+            for metric in attention_metrics:
+                deep_metric_dicts.append({
+                    "operation_type": "attention",
+                    "operation_name": "attention_forward",
+                    "duration_ms": metric.total_time,
+                    "qk_matmul_time": metric.qk_matmul_time,
+                    "scale_time": metric.scale_time,
+                    "mask_time": metric.mask_time,
+                    "softmax_time": metric.softmax_time,
+                    "value_matmul_time": metric.value_matmul_time,
+                    "attention_entropy": metric.avg_attention_entropy,
+                    "attention_sparsity": metric.avg_attention_sparsity,
+                    "max_attention_weight": metric.avg_max_attention_weight
+                })
+
+            # Collect MLP operation metrics
+            mlp_metrics = self.deep_profiler.get_mlp_metrics()
+            for metric in mlp_metrics:
+                deep_metric_dicts.append({
+                    "operation_type": "mlp",
+                    "operation_name": "mlp_forward",
+                    "duration_ms": metric.total_time,
+                    "gate_proj_time": metric.gate_proj_time,
+                    "up_proj_time": metric.up_proj_time,
+                    "gate_up_mult_time": metric.gate_up_mult_time,
+                    "down_proj_time": metric.down_proj_time,
+                    "activation_kill_ratio": metric.activation_kill_ratio
+                })
+
+            # Collect LayerNorm operation metrics
+            layernorm_metrics = self.deep_profiler.get_layernorm_metrics()
+            for metric in layernorm_metrics:
+                deep_metric_dicts.append({
+                    "operation_type": "layernorm",
+                    "operation_name": "layernorm_forward",
+                    "duration_ms": metric.total_time,
+                    "mean_time": metric.mean_time,
+                    "variance_time": metric.variance_time,
+                    "normalization_time": metric.normalization_time,
+                    "scale_shift_time": metric.scale_shift_time,
+                    "variance_ratio": metric.variance_ratio
+                })
+
+            # Batch insert all deep operation metrics
+            if deep_metric_dicts:
+                self.database.add_deep_operation_metrics(
+                    run_id=session.run_id,
+                    component_metric_id=None,  # Run-level metrics
+                    metrics=deep_metric_dicts
+                )
+                logger.debug(f"Saved {len(deep_metric_dicts)} deep operation metrics")
+
+        logger.info(f"Saved run {session.run_id} to database: "
+                   f"{len(power_samples)} power samples, "
+                   f"{len(session.sections)} sections, "
+                   f"{len(token_sections)} tokens, "
+                   f"{len(component_aggregates)} component types")
 
     # Pre-Inference Phase Profiling Helpers
     def profile_tokenization(self, session: ProfilingSession, tokenizer, prompt: str):

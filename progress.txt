@@ -819,3 +819,48 @@ Features: powermetrics integration, per-layer/per-token profiling, SQLite storag
 - Verified Python syntax with py_compile (no errors)
 - Updated PRD: EP-025 passes = true
 
+### EP-026: InferencePipelineProfiler - Database Save - COMPLETED
+- Enhanced _save_run_to_database() method to save complete profiling run data to database
+- Step 1: Create profiling_runs record (already implemented)
+- Step 2: Batch insert power_samples (already implemented)
+- Step 3: Insert pipeline_sections (already implemented)
+- Step 4: Insert tokens with metrics
+  - Extracts decode sections representing tokens
+  - Parses token index from section name (e.g., "decode_token_0")
+  - Calls database.add_token() with token_index, duration_ms, energy_mj, avg_power_mw
+  - token_text field left as None (will be populated in future enhancements)
+- Step 5: Batch insert layer_metrics
+  - Collects all layer timings from LayerProfiler.get_timings()
+  - Creates list of layer_metric_dicts with all fields
+  - Calls database.add_layer_metrics() with batch insert
+  - Currently saved at run level (token_id=None)
+  - Future enhancement: associate with individual tokens for per-token granularity
+- Step 6: Batch insert component_metrics
+  - Aggregates layer timings by component name (q_proj, k_proj, etc.)
+  - Calculates total_duration_ms, count, and averages for activation statistics
+  - Creates component_metric_dicts with aggregated data
+  - Calls database.add_component_metrics() with batch insert
+  - Provides component-level summary across entire run
+- Step 7: Batch insert deep_operation_metrics if present
+  - Checks if deep profiling was enabled (profiling_depth == "deep")
+  - Collects attention operation metrics from DeepAttentionProfiler
+    * Includes qk_matmul_time, scale_time, mask_time, softmax_time, value_matmul_time
+    * Includes attention_entropy, attention_sparsity, max_attention_weight
+  - Collects MLP operation metrics
+    * Includes gate_proj_time, up_proj_time, gate_up_mult_time, down_proj_time
+    * Includes activation_kill_ratio
+  - Collects LayerNorm operation metrics
+    * Includes mean_time, variance_time, normalization_time, scale_shift_time
+    * Includes variance_ratio
+  - Calls database.add_deep_operation_metrics() with batch insert
+  - All deep metrics saved with operation_type and operation_name for categorization
+- Step 8: Return run_id for reference (implicitly via session.run_id)
+- Enhanced logging to show comprehensive save statistics
+  - Number of power samples saved
+  - Number of sections saved
+  - Number of tokens saved
+  - Number of component types saved
+- All database saves wrapped in comprehensive error handling
+- Verified Python syntax with py_compile (no errors)
+- Updated PRD: EP-026 passes = true
+

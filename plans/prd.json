@@ -483,7 +483,7 @@
       "title": "InferencePipelineProfiler - Database Save",
       "description": "Save complete profiling run to database",
       "priority": "CRITICAL",
-      "passes": false,
+      "passes": true,
       "steps": [
         "Create profiling_runs record",
         "Batch insert power_samples",
