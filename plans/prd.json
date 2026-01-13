@@ -1020,7 +1020,7 @@
       "title": "Frontend - RunDetail Component",
       "description": "Create detailed view for a selected run",
       "priority": "MEDIUM",
-      "passes": false,
+      "passes": true,
       "steps": [
         "Create src/components/profiling/RunDetail.tsx",
         "Fetch full run data from API",

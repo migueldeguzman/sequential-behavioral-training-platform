@@ -2476,3 +2476,21 @@ Changes made:
    - Only minor ESLint warnings in other components (non-breaking)
 
 Updated PRD: EP-060 passes = true
+
+==============================================================================
+Date: 2026-01-14
+Feature: EP-061 - Frontend - RunDetail Component
+Status: COMPLETED
+Description: Created detailed view component for selected profiling run
+
+Implementation Details:
+- Created RunDetail.tsx with full run data display
+- Fetches run via api.getProfilingRun()
+- Displays metadata: model, duration, energy, tokens, prompt, response
+- Embedded AnalysisView for complete analysis interface
+- Export buttons (JSON/CSV) using api.exportProfilingRun()
+- Delete button with confirmation modal
+- Error/loading states, dark mode support
+- TypeScript compilation: PASSED
+
+Updated PRD: EP-061 passes = true
