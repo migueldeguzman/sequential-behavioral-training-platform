@@ -2681,3 +2681,41 @@ Updated PRD: EP-076 passes = true
 - Verified Python syntax with py_compile (no errors)
 - Verified TypeScript compilation with npm build (successful)
 
+
+
+## 2026-01-14 - EP-086: Idle Power Baseline Measurement
+
+**Status**: ✅ COMPLETE
+
+**Implementation Summary**:
+- Added measure_idle_baseline() method to PowerMonitor class
+  - Samples power for configurable duration (default: 2 seconds)
+  - Calculates average power across all components during idle period
+  - Returns baseline metrics dictionary with CPU, GPU, ANE, DRAM, and total power
+  - Includes sample count for verification
+- Extended ProfileDatabase schema with baseline fields
+  - Added baseline_power_mw, baseline_cpu_power_mw, baseline_gpu_power_mw, baseline_ane_power_mw, baseline_dram_power_mw
+  - Added baseline_sample_count to track number of samples used
+- Updated ProfileDatabase.update_run_metrics() to accept baseline parameters
+  - All baseline fields are optional and properly bound in UPDATE statement
+- Integrated baseline measurement into InferencePipelineProfiler
+  - Automatically measures idle baseline after starting power monitoring
+  - 2-second idle period before inference begins
+  - Baseline metrics stored in ProfilingSession for database save
+  - Gracefully handles baseline measurement failures with warning logs
+- Updated ProfilingSession dataclass to include baseline_metrics field
+- Modified _save_run_to_database() to persist baseline data
+  - Baseline metrics included in final run update
+  - All baseline fields properly extracted from session.baseline_metrics dictionary
+- Verified Python syntax with py_compile (no errors)
+
+**Technical Details**:
+- Baseline is measured immediately after PowerMonitor.start() is called
+- PowerMonitor continues running during and after baseline measurement
+- Idle samples are tagged with phase='idle' for filtering
+- Baseline calculation uses simple average across all samples
+- Future enhancement: Display baseline as horizontal line on power timeline chart
+- Future enhancement: Calculate active_power_delta = measured - baseline for each sample
+- Future enhancement: Option to subtract baseline from all measurements in API
+
+**Reference**: TokenPowerBench methodology - separates idle from active power for accurate attribution

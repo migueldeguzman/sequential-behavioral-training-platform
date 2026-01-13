@@ -379,6 +379,76 @@ class PowerMonitor:
                 'peak_power_timestamp_ms': self._peak_timestamp_ms
             }
 
+    def measure_idle_baseline(self, duration_seconds: float = 2.0) -> Dict[str, float]:
+        """
+        Measure idle power baseline before inference starts.
+
+        Samples power for the specified duration while the system is idle
+        to establish a baseline for calculating active power delta.
+
+        Args:
+            duration_seconds: How long to sample idle power (default: 2.0 seconds)
+
+        Returns:
+            Dictionary with baseline power measurements:
+                - baseline_power_mw: Average total idle power
+                - baseline_cpu_power_mw: Average idle CPU power
+                - baseline_gpu_power_mw: Average idle GPU power
+                - baseline_ane_power_mw: Average idle ANE power
+                - baseline_dram_power_mw: Average idle DRAM power
+                - baseline_sample_count: Number of samples used for baseline
+
+        Raises:
+            RuntimeError: If PowerMonitor is not running or no samples collected
+
+        Example:
+            monitor = PowerMonitor()
+            monitor.start()
+            baseline = monitor.measure_idle_baseline(duration_seconds=2.0)
+            # Now proceed with inference...
+        """
+        if not self._running:
+            raise RuntimeError("PowerMonitor must be running to measure idle baseline")
+
+        # Record starting sample count
+        initial_sample_count = len(self._samples)
+
+        # Wait for the specified duration while collecting idle samples
+        print(f"Measuring idle baseline for {duration_seconds} seconds...")
+        time.sleep(duration_seconds)
+
+        # Get all samples collected during idle period
+        with self._samples_lock:
+            idle_samples = self._samples[initial_sample_count:]
+
+        if not idle_samples:
+            raise RuntimeError(
+                f"No idle samples collected during {duration_seconds} second baseline measurement. "
+                f"Check that powermetrics is sampling correctly."
+            )
+
+        # Calculate average power across idle samples
+        total_cpu = sum(s.cpu_power_mw for s in idle_samples)
+        total_gpu = sum(s.gpu_power_mw for s in idle_samples)
+        total_ane = sum(s.ane_power_mw for s in idle_samples)
+        total_dram = sum(s.dram_power_mw for s in idle_samples)
+        total_power = sum(s.total_power_mw for s in idle_samples)
+        sample_count = len(idle_samples)
+
+        baseline = {
+            'baseline_power_mw': total_power / sample_count,
+            'baseline_cpu_power_mw': total_cpu / sample_count,
+            'baseline_gpu_power_mw': total_gpu / sample_count,
+            'baseline_ane_power_mw': total_ane / sample_count,
+            'baseline_dram_power_mw': total_dram / sample_count,
+            'baseline_sample_count': sample_count
+        }
+
+        print(f"Idle baseline established: {baseline['baseline_power_mw']:.2f} mW total power "
+              f"({sample_count} samples)")
+
+        return baseline
+
     def __enter__(self):
         """Context manager entry"""
         self.start()

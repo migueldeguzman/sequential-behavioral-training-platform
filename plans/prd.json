@@ -1413,7 +1413,7 @@
       "title": "Idle Power Baseline Measurement",
       "description": "Measure idle power before inference to calculate active power delta",
       "priority": "HIGH",
-      "passes": false,
+      "passes": true,
       "reference": "TokenPowerBench: Separates idle from active power for accurate attribution",
       "steps": [
         "Add 2-second idle sampling period before inference start",

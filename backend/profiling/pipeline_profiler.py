@@ -83,6 +83,7 @@ class ProfilingSession:
     # Collected data during the session
     sections: List[SectionTiming] = field(default_factory=list)
     response: Optional[str] = None
+    baseline_metrics: Optional[Dict[str, float]] = None
 
     # References to profiling components
     power_monitor: Optional[PowerMonitor] = None
@@ -261,10 +262,19 @@ class InferencePipelineProfiler:
         self._current_session = session
 
         # Start power monitoring
+        baseline_metrics = None
         if self.power_monitor:
             try:
                 self.power_monitor.start()
                 logger.info("Power monitoring started")
+
+                # Measure idle baseline power before inference
+                try:
+                    baseline_metrics = self.power_monitor.measure_idle_baseline(duration_seconds=2.0)
+                    logger.info(f"Idle baseline measured: {baseline_metrics['baseline_power_mw']:.2f} mW")
+                except Exception as e:
+                    logger.warning(f"Failed to measure idle baseline: {e}")
+                    baseline_metrics = None
 
                 # Start streaming thread if callback is provided
                 if self.power_sample_callback:
@@ -278,6 +288,9 @@ class InferencePipelineProfiler:
                     logger.info("Power sample streaming started")
             except Exception as e:
                 logger.error(f"Failed to start power monitoring: {e}")
+
+        # Store baseline in session for later database save
+        session.baseline_metrics = baseline_metrics
 
         # Register layer profiler hooks if needed
         if self.layer_profiler and profiling_depth in ["module", "deep"]:
@@ -423,6 +436,9 @@ class InferencePipelineProfiler:
             profiling_depth=session.profiling_depth
         )
 
+        # Get peak power metrics
+        peak_power_metrics = self.power_monitor.get_peak_power() if self.power_monitor else {}
+
         # Update run with calculated metrics
         self.database.update_run_metrics(
             run_id=session.run_id,
@@ -437,6 +453,18 @@ class InferencePipelineProfiler:
             energy_per_input_token_mj=energy_per_input_token_mj,
             energy_per_output_token_mj=energy_per_output_token_mj,
             input_output_energy_ratio=input_output_energy_ratio,
+            peak_power_mw=peak_power_metrics.get('peak_power_mw'),
+            peak_power_cpu_mw=peak_power_metrics.get('peak_power_cpu_mw'),
+            peak_power_gpu_mw=peak_power_metrics.get('peak_power_gpu_mw'),
+            peak_power_ane_mw=peak_power_metrics.get('peak_power_ane_mw'),
+            peak_power_dram_mw=peak_power_metrics.get('peak_power_dram_mw'),
+            peak_power_timestamp_ms=peak_power_metrics.get('peak_power_timestamp_ms'),
+            baseline_power_mw=session.baseline_metrics.get('baseline_power_mw') if session.baseline_metrics else None,
+            baseline_cpu_power_mw=session.baseline_metrics.get('baseline_cpu_power_mw') if session.baseline_metrics else None,
+            baseline_gpu_power_mw=session.baseline_metrics.get('baseline_gpu_power_mw') if session.baseline_metrics else None,
+            baseline_ane_power_mw=session.baseline_metrics.get('baseline_ane_power_mw') if session.baseline_metrics else None,
+            baseline_dram_power_mw=session.baseline_metrics.get('baseline_dram_power_mw') if session.baseline_metrics else None,
+            baseline_sample_count=session.baseline_metrics.get('baseline_sample_count') if session.baseline_metrics else None,
             status="completed"
         )
 
