@@ -811,7 +811,7 @@
       "title": "Frontend - TokenGenerationStream Component",
       "description": "Create live token stream display",
       "priority": "HIGH",
-      "passes": false,
+      "passes": true,
       "steps": [
         "Create src/components/profiling/TokenGenerationStream.tsx",
         "Show tokens as they generate",
