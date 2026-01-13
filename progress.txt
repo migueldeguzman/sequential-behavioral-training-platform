@@ -1,0 +1,9 @@
+# Energy Profiler Progress Log
+Created: 2026-01-13
+
+## Project Overview
+Energy and power profiling system for transformer inference on Apple Silicon M4 Max.
+Features: powermetrics integration, per-layer/per-token profiling, SQLite storage, comprehensive visualizations.
+
+---
+

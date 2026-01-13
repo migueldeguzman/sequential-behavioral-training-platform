@@ -1,0 +1,1204 @@
+{
+  "project": "Energy Profiler for ML Dashboard",
+  "description": "Comprehensive energy and power profiling system for transformer inference on Apple Silicon M4 Max",
+  "version": "2.0.0",
+  "created": "2026-01-13",
+  "updated": "2026-01-13",
+  "hardware": {
+    "target": "Apple Silicon M4 Max 128GB",
+    "power_source": "powermetrics with sudo (sudoers entry for passwordless access)",
+    "sampling_interval_ms": 100
+  },
+  "architecture": {
+    "backend": {
+      "framework": "FastAPI",
+      "components": [
+        "PowerMonitor - wraps powermetrics, samples CPU/GPU/ANE/DRAM power",
+        "LayerProfiler - PyTorch hooks on all transformer components",
+        "DeepAttentionProfiler - lowest-level tensor operation profiling",
+        "InferencePipelineProfiler - full start-to-finish section accounting",
+        "ProfileDatabase - SQLite storage with prompt-centric schema",
+        "WebSocket streaming for real-time profiling data"
+      ],
+      "new_endpoints": [
+        "/api/profiling/generate",
+        "/api/profiling/runs",
+        "/api/profiling/run/{id}",
+        "/api/profiling/run/{id}/summary",
+        "/api/profiling/run/{id}/pipeline",
+        "/api/profiling/export/{id}",
+        "/ws/profiling"
+      ]
+    },
+    "frontend": {
+      "framework": "React/Next.js",
+      "chart_libraries": {
+        "heatmaps": "Custom Canvas (performance for large grids)",
+        "time_series": "Custom Canvas (real-time streaming)",
+        "treemap": "D3.js (hierarchical layouts)",
+        "sankey": "D3-sankey (flow diagrams)"
+      },
+      "components": [
+        "EnergyProfilerPanel - main container",
+        "ProfilingControls - start/stop, model select",
+        "RealTimeView - live during inference",
+        "AnalysisView - post-inference exploration",
+        "HistoryBrowser - past runs and comparison"
+      ]
+    },
+    "database": {
+      "type": "SQLite",
+      "path": "backend/profiling.db"
+    }
+  },
+  "inference_pipeline_sections": {
+    "description": "Complete start-to-finish energy accounting by section",
+    "phases": {
+      "pre_inference": {
+        "sections": [
+          "tokenization - tokenizer.encode()",
+          "tensor_transfer - input to device",
+          "kv_cache_init - initialize key-value cache"
+        ]
+      },
+      "prefill": {
+        "description": "Process entire prompt in one forward pass",
+        "sections": [
+          "embedding_lookup - token embeddings",
+          "position_embedding - positional encoding",
+          "layers - all transformer layers (see layer_components)",
+          "final_layernorm - output normalization",
+          "lm_head - projection to vocabulary",
+          "kv_cache_store - save keys/values for decode"
+        ]
+      },
+      "decode": {
+        "description": "Generate tokens one at a time",
+        "per_token_sections": [
+          "embedding - previous token embedding",
+          "position - position encoding for new position",
+          "layers - all transformer layers",
+          "final_layernorm - output normalization",
+          "lm_head - projection to vocabulary logits",
+          "sampling - temperature, top_k, top_p, sample/argmax",
+          "kv_cache_append - add new key/value to cache"
+        ]
+      },
+      "post_inference": {
+        "sections": [
+          "tensor_to_cpu - move output tensors",
+          "detokenization - tokenizer.decode()",
+          "cleanup - memory release"
+        ]
+      }
+    }
+  },
+  "data_model": {
+    "hierarchy": "Prompt -> Phases -> Tokens -> Layers -> Components -> Operations",
+    "description": "All profiling data clusters under the prompt that generated it"
+  },
+  "features": [
+    {
+      "id": "EP-001",
+      "title": "Project Setup and Dependencies",
+      "description": "Set up project structure and install required dependencies",
+      "priority": "CRITICAL",
+      "passes": false,
+      "steps": [
+        "Add pynvml, psutil to requirements.txt (power monitoring helpers)",
+        "Add d3, d3-sankey to package.json for visualizations",
+        "Create backend/profiling/ directory structure",
+        "Create src/components/profiling/ directory structure",
+        "Create backend/profiling/__init__.py"
+      ]
+    },
+    {
+      "id": "EP-002",
+      "title": "Sudoers Configuration for powermetrics",
+      "description": "Configure passwordless sudo access for powermetrics",
+      "priority": "CRITICAL",
+      "passes": false,
+      "steps": [
+        "Create setup script to add sudoers entry",
+        "Add documentation for manual sudoers setup",
+        "Add verification check for powermetrics access on backend startup",
+        "Add graceful fallback message if powermetrics unavailable"
+      ]
+    },
+    {
+      "id": "EP-003",
+      "title": "PowerMonitor Class - Basic Implementation",
+      "description": "Create PowerMonitor class to spawn and manage powermetrics subprocess",
+      "priority": "CRITICAL",
+      "passes": false,
+      "steps": [
+        "Create backend/profiling/power_monitor.py",
+        "Implement PowerMonitor.__init__ with configurable sample interval",
+        "Implement PowerMonitor.start() to spawn powermetrics subprocess",
+        "Implement PowerMonitor.stop() to terminate subprocess and collect samples",
+        "Implement PowerMonitor.is_available() class method to check powermetrics access"
+      ]
+    },
+    {
+      "id": "EP-004",
+      "title": "PowerMonitor Class - Plist Parsing",
+      "description": "Parse powermetrics plist/XML output into structured data",
+      "priority": "CRITICAL",
+      "passes": false,
+      "steps": [
+        "Implement plist XML parser for powermetrics output",
+        "Extract CPU power (per cluster if available)",
+        "Extract GPU power",
+        "Extract ANE power",
+        "Extract DRAM power",
+        "Create PowerSample dataclass with all fields",
+        "Handle parsing errors gracefully"
+      ]
+    },
+    {
+      "id": "EP-005",
+      "title": "PowerMonitor Class - Async Sampling Thread",
+      "description": "Run power sampling in background thread during inference",
+      "priority": "CRITICAL",
+      "passes": false,
+      "steps": [
+        "Implement background thread for continuous sampling",
+        "Add thread-safe sample collection queue",
+        "Implement get_current() for latest sample",
+        "Implement get_samples() to retrieve all collected samples",
+        "Add proper thread cleanup on stop()"
+      ]
+    },
+    {
+      "id": "EP-006",
+      "title": "SQLite Database Schema Creation",
+      "description": "Create SQLite database with full schema for profiling data",
+      "priority": "CRITICAL",
+      "passes": false,
+      "steps": [
+        "Create backend/profiling/database.py",
+        "Define profiling_runs table schema",
+        "Define power_samples table schema",
+        "Define pipeline_sections table schema",
+        "Define tokens table schema",
+        "Define layer_metrics table schema",
+        "Define component_metrics table schema",
+        "Define deep_operation_metrics table schema",
+        "Create all indexes for query performance",
+        "Implement database initialization function"
+      ]
+    },
+    {
+      "id": "EP-007",
+      "title": "ProfileDatabase Class - CRUD Operations",
+      "description": "Implement database access class with all CRUD operations",
+      "priority": "CRITICAL",
+      "passes": false,
+      "steps": [
+        "Implement ProfileDatabase.__init__ with connection management",
+        "Implement create_run() to insert new profiling run",
+        "Implement add_power_samples() with batch insert",
+        "Implement add_pipeline_section()",
+        "Implement add_token() with metrics",
+        "Implement add_layer_metrics() with batch insert",
+        "Implement add_component_metrics() with batch insert",
+        "Implement add_deep_operation_metrics() with batch insert"
+      ]
+    },
+    {
+      "id": "EP-008",
+      "title": "ProfileDatabase Class - Query Methods",
+      "description": "Implement query methods for retrieving profiling data",
+      "priority": "CRITICAL",
+      "passes": false,
+      "steps": [
+        "Implement get_run(run_id) for full run data",
+        "Implement get_runs() with filtering (date, model, tags)",
+        "Implement get_run_summary(run_id) for aggregated stats",
+        "Implement get_tokens(run_id) with metrics",
+        "Implement get_layer_metrics(token_id)",
+        "Implement get_component_metrics(layer_metric_id)",
+        "Implement get_power_timeline(run_id)",
+        "Implement search_by_prompt(query_string)",
+        "Implement delete_run(run_id)"
+      ]
+    },
+    {
+      "id": "EP-009",
+      "title": "Model Architecture Detector",
+      "description": "Auto-detect transformer model architecture for hook registration",
+      "priority": "CRITICAL",
+      "passes": false,
+      "steps": [
+        "Create backend/profiling/model_detector.py",
+        "Implement detection for Llama architecture",
+        "Implement detection for Mistral architecture",
+        "Implement detection for Phi architecture",
+        "Implement detection for Qwen architecture",
+        "Return standardized component paths for each architecture",
+        "Add fallback for unknown architectures with warning"
+      ]
+    },
+    {
+      "id": "EP-010",
+      "title": "LayerProfiler Class - Hook Registration",
+      "description": "Create LayerProfiler to register PyTorch forward hooks on model components",
+      "priority": "CRITICAL",
+      "passes": false,
+      "steps": [
+        "Create backend/profiling/layer_profiler.py",
+        "Implement LayerProfiler.__init__ with model reference",
+        "Use ModelArchitectureDetector to find component paths",
+        "Register hooks on attention components (q_proj, k_proj, v_proj, o_proj)",
+        "Register hooks on MLP components (gate_proj, up_proj, down_proj)",
+        "Register hooks on layer norms",
+        "Store hook handles for later removal"
+      ]
+    },
+    {
+      "id": "EP-011",
+      "title": "LayerProfiler Class - Timing Capture",
+      "description": "Capture accurate timing for each hooked component",
+      "priority": "CRITICAL",
+      "passes": false,
+      "steps": [
+        "Implement pre-hook to record start time",
+        "Implement post-hook to record end time",
+        "Use torch.mps.synchronize() before timing on Apple Silicon",
+        "Store timing in thread-local storage for concurrent safety",
+        "Implement get_timings() to retrieve all component timings",
+        "Implement reset() to clear timings between tokens"
+      ]
+    },
+    {
+      "id": "EP-012",
+      "title": "LayerProfiler Class - Activation Statistics",
+      "description": "Capture activation statistics from hook outputs",
+      "priority": "CRITICAL",
+      "passes": false,
+      "steps": [
+        "Capture activation mean (output.abs().mean())",
+        "Capture activation std (output.std())",
+        "Capture activation max (output.abs().max())",
+        "Capture activation sparsity ((output.abs() < threshold).mean())",
+        "Make threshold configurable",
+        "Store statistics per component per forward pass"
+      ]
+    },
+    {
+      "id": "EP-013",
+      "title": "LayerProfiler Class - Cleanup",
+      "description": "Implement proper hook removal and cleanup",
+      "priority": "CRITICAL",
+      "passes": false,
+      "steps": [
+        "Implement detach() to remove all hooks",
+        "Implement context manager (__enter__, __exit__)",
+        "Ensure hooks are removed even on exceptions",
+        "Clear all stored metrics on cleanup"
+      ]
+    },
+    {
+      "id": "EP-014",
+      "title": "DeepAttentionProfiler - Monkey Patch Approach",
+      "description": "Implement deep operation profiling via monkey-patching HuggingFace attention",
+      "priority": "HIGH",
+      "passes": false,
+      "steps": [
+        "Create backend/profiling/deep_profiler.py",
+        "Store original attention forward method",
+        "Create instrumented attention forward wrapper",
+        "Time QK^T matmul operation",
+        "Time scale operation",
+        "Time mask application",
+        "Time softmax operation",
+        "Time value matmul operation",
+        "Implement patch() and unpatch() methods"
+      ]
+    },
+    {
+      "id": "EP-015",
+      "title": "DeepAttentionProfiler - Extra Metrics",
+      "description": "Capture additional attention metrics beyond timing",
+      "priority": "HIGH",
+      "passes": false,
+      "steps": [
+        "Compute attention entropy per head",
+        "Compute max attention weight per head",
+        "Compute attention sparsity (near-zero weights)",
+        "Store per-head metrics for analysis",
+        "Compute average across heads for summary"
+      ]
+    },
+    {
+      "id": "EP-016",
+      "title": "DeepAttentionProfiler - MLP Operations",
+      "description": "Profile deep operations within MLP blocks",
+      "priority": "HIGH",
+      "passes": false,
+      "steps": [
+        "Patch MLP forward method",
+        "Time gate projection and activation",
+        "Time up projection and activation",
+        "Time gate * up multiplication",
+        "Time down projection",
+        "Compute activation kill ratio (negative inputs to GELU/SiLU)"
+      ]
+    },
+    {
+      "id": "EP-017",
+      "title": "DeepAttentionProfiler - LayerNorm Operations",
+      "description": "Profile deep operations within LayerNorm",
+      "priority": "HIGH",
+      "passes": false,
+      "steps": [
+        "Patch LayerNorm forward method",
+        "Time mean computation",
+        "Time variance computation",
+        "Time normalization operation",
+        "Time scale and shift (gamma, beta)",
+        "Compute input/output variance ratio"
+      ]
+    },
+    {
+      "id": "EP-018",
+      "title": "DeepAttentionProfiler - Custom Wrapper Approach",
+      "description": "Alternative deep profiling via model wrapper",
+      "priority": "HIGH",
+      "passes": false,
+      "steps": [
+        "Create InstrumentedModelWrapper class",
+        "Override forward to intercept layer calls",
+        "Support both monkey-patch and wrapper via config",
+        "Add config flag: profiling_depth = 'module' | 'deep'",
+        "Document tradeoffs between approaches"
+      ]
+    },
+    {
+      "id": "EP-019",
+      "title": "InferencePipelineProfiler - Core Structure",
+      "description": "Create main profiler orchestrating all components",
+      "priority": "CRITICAL",
+      "passes": false,
+      "steps": [
+        "Create backend/profiling/pipeline_profiler.py",
+        "Implement InferencePipelineProfiler.__init__",
+        "Accept PowerMonitor, LayerProfiler, DeepProfiler, Database",
+        "Create run context manager for profiling session",
+        "Generate unique run IDs"
+      ]
+    },
+    {
+      "id": "EP-020",
+      "title": "InferencePipelineProfiler - Section Timing",
+      "description": "Implement section timing context manager",
+      "priority": "CRITICAL",
+      "passes": false,
+      "steps": [
+        "Create section() context manager",
+        "Record section start timestamp",
+        "Record section end timestamp",
+        "Calculate section duration",
+        "Correlate with power samples for energy calculation",
+        "Store section data for database"
+      ]
+    },
+    {
+      "id": "EP-021",
+      "title": "InferencePipelineProfiler - Pre-Inference Phase",
+      "description": "Profile pre-inference operations",
+      "priority": "CRITICAL",
+      "passes": false,
+      "steps": [
+        "Wrap tokenizer.encode() with section timing",
+        "Wrap tensor.to(device) with section timing",
+        "Wrap KV-cache initialization with section timing",
+        "Store pre-inference metrics"
+      ]
+    },
+    {
+      "id": "EP-022",
+      "title": "InferencePipelineProfiler - Prefill Phase",
+      "description": "Profile prefill phase (prompt processing)",
+      "priority": "CRITICAL",
+      "passes": false,
+      "steps": [
+        "Wrap embedding lookup with section timing",
+        "Wrap position embedding with section timing",
+        "Profile all layers via LayerProfiler during prefill",
+        "Wrap final layernorm with section timing",
+        "Wrap LM head projection with section timing",
+        "Wrap KV-cache storage with section timing",
+        "Aggregate prefill metrics"
+      ]
+    },
+    {
+      "id": "EP-023",
+      "title": "InferencePipelineProfiler - Decode Phase",
+      "description": "Profile decode phase (token generation loop)",
+      "priority": "CRITICAL",
+      "passes": false,
+      "steps": [
+        "Create per-token profiling within decode loop",
+        "Profile embedding lookup per token",
+        "Profile position embedding per token",
+        "Capture layer metrics via hooks per token",
+        "Profile LM head per token",
+        "Profile sampling operation per token",
+        "Profile KV-cache append per token",
+        "Reset LayerProfiler between tokens"
+      ]
+    },
+    {
+      "id": "EP-024",
+      "title": "InferencePipelineProfiler - Post-Inference Phase",
+      "description": "Profile post-inference operations",
+      "priority": "CRITICAL",
+      "passes": false,
+      "steps": [
+        "Wrap tensor.to('cpu') with section timing",
+        "Wrap tokenizer.decode() with section timing",
+        "Profile memory cleanup if applicable",
+        "Calculate total inference energy"
+      ]
+    },
+    {
+      "id": "EP-025",
+      "title": "InferencePipelineProfiler - Data Aggregation",
+      "description": "Aggregate all profiling data for storage",
+      "priority": "CRITICAL",
+      "passes": false,
+      "steps": [
+        "Collect all power samples from PowerMonitor",
+        "Collect all section timings",
+        "Collect all token metrics with layer breakdowns",
+        "Collect all component metrics",
+        "Collect deep operation metrics if enabled",
+        "Calculate energy per section (power * time)",
+        "Build complete run data structure"
+      ]
+    },
+    {
+      "id": "EP-026",
+      "title": "InferencePipelineProfiler - Database Save",
+      "description": "Save complete profiling run to database",
+      "priority": "CRITICAL",
+      "passes": false,
+      "steps": [
+        "Create profiling_runs record",
+        "Batch insert power_samples",
+        "Insert pipeline_sections",
+        "Insert tokens with metrics",
+        "Batch insert layer_metrics",
+        "Batch insert component_metrics",
+        "Batch insert deep_operation_metrics if present",
+        "Return run_id for reference"
+      ]
+    },
+    {
+      "id": "EP-027",
+      "title": "Profiled Generate Endpoint",
+      "description": "Create FastAPI endpoint for profiled inference",
+      "priority": "HIGH",
+      "passes": false,
+      "steps": [
+        "Create ProfiledGenerateRequest Pydantic model",
+        "Add profiling_depth field (module/deep)",
+        "Add tags field for categorization",
+        "Add experiment_name field",
+        "Implement POST /api/profiling/generate endpoint",
+        "Instantiate all profiler components",
+        "Run inference with profiling",
+        "Save to database and return run_id"
+      ]
+    },
+    {
+      "id": "EP-028",
+      "title": "Profiling Runs List Endpoint",
+      "description": "Create endpoint to list profiling runs",
+      "priority": "HIGH",
+      "passes": false,
+      "steps": [
+        "Implement GET /api/profiling/runs endpoint",
+        "Add query params: model, date_from, date_to, tags, experiment",
+        "Add pagination support (limit, offset)",
+        "Add sorting options (date, duration, energy)",
+        "Return list with summary metrics per run"
+      ]
+    },
+    {
+      "id": "EP-029",
+      "title": "Profiling Run Detail Endpoint",
+      "description": "Create endpoint to get full profiling run data",
+      "priority": "HIGH",
+      "passes": false,
+      "steps": [
+        "Implement GET /api/profiling/run/{id} endpoint",
+        "Include all power samples",
+        "Include all pipeline sections",
+        "Include all tokens with layer metrics",
+        "Include component metrics nested under layers",
+        "Include deep operation metrics if present"
+      ]
+    },
+    {
+      "id": "EP-030",
+      "title": "Profiling Run Summary Endpoint",
+      "description": "Create endpoint for aggregated run statistics",
+      "priority": "HIGH",
+      "passes": false,
+      "steps": [
+        "Implement GET /api/profiling/run/{id}/summary endpoint",
+        "Calculate total duration and energy",
+        "Calculate per-phase breakdown (pre, prefill, decode, post)",
+        "Calculate average metrics per layer",
+        "Calculate average metrics per component",
+        "Identify hottest components"
+      ]
+    },
+    {
+      "id": "EP-031",
+      "title": "Profiling Pipeline Breakdown Endpoint",
+      "description": "Create endpoint for pipeline section analysis",
+      "priority": "HIGH",
+      "passes": false,
+      "steps": [
+        "Implement GET /api/profiling/run/{id}/pipeline endpoint",
+        "Return hierarchical phase > section breakdown",
+        "Include timing and energy per section",
+        "Calculate percentage of total per section"
+      ]
+    },
+    {
+      "id": "EP-032",
+      "title": "Profiling Export Endpoint",
+      "description": "Create endpoint to export profiling data",
+      "priority": "HIGH",
+      "passes": false,
+      "steps": [
+        "Implement GET /api/profiling/export/{id} endpoint",
+        "Add format query param (json/csv)",
+        "Generate JSON export with full nested structure",
+        "Generate CSV export with flattened tables",
+        "Set appropriate Content-Type headers",
+        "Add Content-Disposition for download"
+      ]
+    },
+    {
+      "id": "EP-033",
+      "title": "Profiling Delete Endpoint",
+      "description": "Create endpoint to delete profiling runs",
+      "priority": "HIGH",
+      "passes": false,
+      "steps": [
+        "Implement DELETE /api/profiling/run/{id} endpoint",
+        "Cascade delete all related records",
+        "Return success confirmation"
+      ]
+    },
+    {
+      "id": "EP-034",
+      "title": "WebSocket Profiling Endpoint - Setup",
+      "description": "Create WebSocket endpoint for real-time streaming",
+      "priority": "HIGH",
+      "passes": false,
+      "steps": [
+        "Implement /ws/profiling WebSocket endpoint",
+        "Handle client connection/disconnection",
+        "Create message queue for profiling events",
+        "Define message types enum"
+      ]
+    },
+    {
+      "id": "EP-035",
+      "title": "WebSocket Profiling - Power Streaming",
+      "description": "Stream power samples via WebSocket",
+      "priority": "HIGH",
+      "passes": false,
+      "steps": [
+        "Create power_sample message type",
+        "Stream samples at 100ms intervals during inference",
+        "Include CPU, GPU, ANE, DRAM, total power",
+        "Include timestamp relative to inference start"
+      ]
+    },
+    {
+      "id": "EP-036",
+      "title": "WebSocket Profiling - Section Events",
+      "description": "Stream section start/end events",
+      "priority": "HIGH",
+      "passes": false,
+      "steps": [
+        "Create section_start message type",
+        "Create section_end message type",
+        "Include phase, section name, timestamp",
+        "Include duration and energy on section_end"
+      ]
+    },
+    {
+      "id": "EP-037",
+      "title": "WebSocket Profiling - Token Events",
+      "description": "Stream token generation events",
+      "priority": "HIGH",
+      "passes": false,
+      "steps": [
+        "Create token_complete message type",
+        "Include token position and text",
+        "Include token duration and energy",
+        "Include power snapshot at token time",
+        "Include layer metrics summary"
+      ]
+    },
+    {
+      "id": "EP-038",
+      "title": "WebSocket Profiling - Layer/Component Events",
+      "description": "Stream detailed layer and component metrics",
+      "priority": "HIGH",
+      "passes": false,
+      "steps": [
+        "Create layer_metrics message type",
+        "Create component_metrics message type",
+        "Stream after each token if client requests detail",
+        "Include full activation statistics"
+      ]
+    },
+    {
+      "id": "EP-039",
+      "title": "WebSocket Profiling - Inference Complete",
+      "description": "Stream final summary on inference completion",
+      "priority": "HIGH",
+      "passes": false,
+      "steps": [
+        "Create inference_complete message type",
+        "Include run_id for database reference",
+        "Include total duration and energy",
+        "Include token count and tokens/second",
+        "Include summary statistics"
+      ]
+    },
+    {
+      "id": "EP-040",
+      "title": "Frontend - TypeScript Types",
+      "description": "Define TypeScript types for profiling data",
+      "priority": "HIGH",
+      "passes": false,
+      "steps": [
+        "Add ProfilingRun interface to src/types/index.ts",
+        "Add PowerSample interface",
+        "Add PipelineSection interface",
+        "Add TokenMetrics interface",
+        "Add LayerMetrics interface",
+        "Add ComponentMetrics interface",
+        "Add DeepOperationMetrics interface",
+        "Add WebSocket message types"
+      ]
+    },
+    {
+      "id": "EP-041",
+      "title": "Frontend - API Client Extensions",
+      "description": "Add profiling API methods to api.ts",
+      "priority": "HIGH",
+      "passes": false,
+      "steps": [
+        "Add profiledGenerate() method",
+        "Add getProfilingRuns() method with filters",
+        "Add getProfilingRun(id) method",
+        "Add getProfilingRunSummary(id) method",
+        "Add getProfilingPipeline(id) method",
+        "Add exportProfilingRun(id, format) method",
+        "Add deleteProfilingRun(id) method"
+      ]
+    },
+    {
+      "id": "EP-042",
+      "title": "Frontend - Profiling WebSocket Manager",
+      "description": "Create WebSocket manager for profiling stream",
+      "priority": "HIGH",
+      "passes": false,
+      "steps": [
+        "Create src/lib/profilingWebsocket.ts",
+        "Implement connection management",
+        "Parse incoming message types",
+        "Emit typed events for each message type",
+        "Handle reconnection logic",
+        "Provide React hook useProfilingWebSocket()"
+      ]
+    },
+    {
+      "id": "EP-043",
+      "title": "Frontend - ProfilingContext",
+      "description": "Create React context for profiling state",
+      "priority": "HIGH",
+      "passes": false,
+      "steps": [
+        "Create src/components/profiling/ProfilingContext.tsx",
+        "Store current profiling run state",
+        "Store real-time power samples array",
+        "Store real-time token stream",
+        "Store current section info",
+        "Provide actions: startProfiling, stopProfiling",
+        "Connect to WebSocket on profiling start"
+      ]
+    },
+    {
+      "id": "EP-044",
+      "title": "Frontend - EnergyProfilerPanel Container",
+      "description": "Create main Energy Profiler panel component",
+      "priority": "HIGH",
+      "passes": false,
+      "steps": [
+        "Create src/components/profiling/EnergyProfilerPanel.tsx",
+        "Add panel header with title",
+        "Add tab navigation (Live / Analysis / History)",
+        "Wrap with ProfilingContext.Provider",
+        "Handle panel state (which view is active)"
+      ]
+    },
+    {
+      "id": "EP-045",
+      "title": "Frontend - ProfilingControls Component",
+      "description": "Create profiling start/stop controls",
+      "priority": "HIGH",
+      "passes": false,
+      "steps": [
+        "Create src/components/profiling/ProfilingControls.tsx",
+        "Add model selector dropdown",
+        "Add prompt input (or link to existing prompt)",
+        "Add profiling depth selector (Module/Deep)",
+        "Add tags input",
+        "Add Start Profiling button",
+        "Add Stop button (during profiling)",
+        "Show current status indicator"
+      ]
+    },
+    {
+      "id": "EP-046",
+      "title": "Frontend - PowerTimeSeriesChart Component",
+      "description": "Create real-time power time series visualization",
+      "priority": "HIGH",
+      "passes": false,
+      "steps": [
+        "Create src/components/profiling/charts/PowerTimeSeriesChart.tsx",
+        "Use Canvas for performance",
+        "Plot CPU power line (blue)",
+        "Plot GPU power line (green)",
+        "Plot ANE power line (orange)",
+        "Plot DRAM power line (purple)",
+        "Plot Total power line (red)",
+        "Add legend",
+        "Update smoothly with new samples",
+        "Auto-scroll as time progresses"
+      ]
+    },
+    {
+      "id": "EP-047",
+      "title": "Frontend - LiveLayerHeatmap Component",
+      "description": "Create real-time layer heatmap updating per token",
+      "priority": "HIGH",
+      "passes": false,
+      "steps": [
+        "Create src/components/profiling/charts/LiveLayerHeatmap.tsx",
+        "Use Canvas for performance",
+        "Y-axis: layers (0 to N)",
+        "X-axis: components (q_proj, k_proj, etc.)",
+        "Color intensity: selected metric",
+        "Update on each token_complete event",
+        "Add color scale legend"
+      ]
+    },
+    {
+      "id": "EP-048",
+      "title": "Frontend - TokenGenerationStream Component",
+      "description": "Create live token stream display",
+      "priority": "HIGH",
+      "passes": false,
+      "steps": [
+        "Create src/components/profiling/TokenGenerationStream.tsx",
+        "Show tokens as they generate",
+        "Color-code by energy consumption",
+        "Show timing per token on hover",
+        "Auto-scroll to latest token",
+        "Show total tokens and tokens/second"
+      ]
+    },
+    {
+      "id": "EP-049",
+      "title": "Frontend - CurrentOperationIndicator Component",
+      "description": "Show current operation being profiled",
+      "priority": "HIGH",
+      "passes": false,
+      "steps": [
+        "Create src/components/profiling/CurrentOperationIndicator.tsx",
+        "Show current phase (pre/prefill/decode/post)",
+        "Show current section within phase",
+        "Show current layer (during layer processing)",
+        "Show current component (during component processing)",
+        "Animate transitions between operations"
+      ]
+    },
+    {
+      "id": "EP-050",
+      "title": "Frontend - RealTimeView Container",
+      "description": "Compose real-time view with all live components",
+      "priority": "HIGH",
+      "passes": false,
+      "steps": [
+        "Create src/components/profiling/RealTimeView.tsx",
+        "Layout: Controls at top",
+        "Layout: PowerTimeSeriesChart main area",
+        "Layout: LiveLayerHeatmap below",
+        "Layout: TokenGenerationStream sidebar",
+        "Layout: CurrentOperationIndicator footer",
+        "Handle responsive layout"
+      ]
+    },
+    {
+      "id": "EP-051",
+      "title": "Frontend - MetricSelector Component",
+      "description": "Create metric selection dropdown for analysis views",
+      "priority": "HIGH",
+      "passes": false,
+      "steps": [
+        "Create src/components/profiling/MetricSelector.tsx",
+        "Options: Time (ms)",
+        "Options: Energy (mJ)",
+        "Options: Power (mW)",
+        "Options: Activation Mean",
+        "Options: Activation Max",
+        "Options: Sparsity",
+        "Options: Attention Entropy (if deep profiling)",
+        "Emit selection change event"
+      ]
+    },
+    {
+      "id": "EP-052",
+      "title": "Frontend - HeatmapChart Component",
+      "description": "Create static heatmap for analysis view",
+      "priority": "HIGH",
+      "passes": false,
+      "steps": [
+        "Create src/components/profiling/charts/HeatmapChart.tsx",
+        "Accept data array, xLabels, yLabels props",
+        "Use Canvas for rendering",
+        "Add color scale with configurable gradient",
+        "Show value on cell hover",
+        "Support click handler for drill-down",
+        "Add axis labels"
+      ]
+    },
+    {
+      "id": "EP-053",
+      "title": "Frontend - TokenSlider Component",
+      "description": "Create slider to scrub through tokens",
+      "priority": "HIGH",
+      "passes": false,
+      "steps": [
+        "Create src/components/profiling/TokenSlider.tsx",
+        "Range slider from 0 to total tokens",
+        "Show token text at current position",
+        "Show token metrics at current position",
+        "Support play/pause for animation",
+        "Emit token index change event"
+      ]
+    },
+    {
+      "id": "EP-054",
+      "title": "Frontend - PipelineTimeline Component",
+      "description": "Create horizontal timeline of inference phases",
+      "priority": "HIGH",
+      "passes": false,
+      "steps": [
+        "Create src/components/profiling/charts/PipelineTimeline.tsx",
+        "Show pre_inference, prefill, decode, post_inference as bars",
+        "Width proportional to duration",
+        "Color by energy consumption",
+        "Click to expand section details",
+        "Show percentage labels"
+      ]
+    },
+    {
+      "id": "EP-055",
+      "title": "Frontend - TreemapChart Component",
+      "description": "Create hierarchical treemap visualization",
+      "priority": "MEDIUM",
+      "passes": false,
+      "steps": [
+        "Create src/components/profiling/charts/TreemapChart.tsx",
+        "Use D3.js treemap layout",
+        "Accept hierarchical data structure",
+        "Size rectangles by selected metric",
+        "Color by metric or category",
+        "Click to zoom into children",
+        "Breadcrumb navigation",
+        "Show labels with percentage"
+      ]
+    },
+    {
+      "id": "EP-056",
+      "title": "Frontend - SankeyChart Component",
+      "description": "Create Sankey flow diagram",
+      "priority": "MEDIUM",
+      "passes": false,
+      "steps": [
+        "Create src/components/profiling/charts/SankeyChart.tsx",
+        "Use D3-sankey library",
+        "Define nodes: Input, Layers, Output",
+        "Define links with flow values (energy)",
+        "Show attention vs MLP split per layer",
+        "Highlight path on hover",
+        "Add node labels"
+      ]
+    },
+    {
+      "id": "EP-057",
+      "title": "Frontend - WaterfallChart Component",
+      "description": "Create token waterfall chart",
+      "priority": "MEDIUM",
+      "passes": false,
+      "steps": [
+        "Create src/components/profiling/charts/WaterfallChart.tsx",
+        "Each column = one token",
+        "Stacked bars showing component breakdown",
+        "Add cumulative energy line overlay",
+        "Hover shows token details",
+        "Support horizontal scroll for many tokens"
+      ]
+    },
+    {
+      "id": "EP-058",
+      "title": "Frontend - DeepDrilldown Component",
+      "description": "Create detailed view for deep operation metrics",
+      "priority": "MEDIUM",
+      "passes": false,
+      "steps": [
+        "Create src/components/profiling/DeepDrilldown.tsx",
+        "Show when component is clicked in heatmap",
+        "Display all deep operations for that component",
+        "Show attention entropy, sparsity metrics",
+        "Show MLP activation kill ratio",
+        "Show LayerNorm variance ratio",
+        "Close button to return to overview"
+      ]
+    },
+    {
+      "id": "EP-059",
+      "title": "Frontend - AnalysisView Container",
+      "description": "Compose analysis view with all post-inference components",
+      "priority": "HIGH",
+      "passes": false,
+      "steps": [
+        "Create src/components/profiling/AnalysisView.tsx",
+        "Layout: MetricSelector at top",
+        "Layout: PipelineTimeline overview",
+        "Layout: TokenSlider for token navigation",
+        "Layout: HeatmapChart main area",
+        "Layout: TreemapChart and SankeyChart tabs",
+        "Layout: DeepDrilldown modal",
+        "Handle metric selection state"
+      ]
+    },
+    {
+      "id": "EP-060",
+      "title": "Frontend - RunList Component",
+      "description": "Create list of past profiling runs",
+      "priority": "MEDIUM",
+      "passes": false,
+      "steps": [
+        "Create src/components/profiling/RunList.tsx",
+        "Fetch runs from API with pagination",
+        "Show: date, model, prompt preview, duration, energy",
+        "Add search by prompt text",
+        "Add filter by date range",
+        "Add filter by model",
+        "Add filter by tags",
+        "Add sort options",
+        "Click to view run details"
+      ]
+    },
+    {
+      "id": "EP-061",
+      "title": "Frontend - RunDetail Component",
+      "description": "Create detailed view for a selected run",
+      "priority": "MEDIUM",
+      "passes": false,
+      "steps": [
+        "Create src/components/profiling/RunDetail.tsx",
+        "Fetch full run data from API",
+        "Show run metadata (date, model, prompt, tags)",
+        "Embed AnalysisView with run data",
+        "Add export buttons (JSON, CSV)",
+        "Add delete button with confirmation"
+      ]
+    },
+    {
+      "id": "EP-062",
+      "title": "Frontend - CompareView Component",
+      "description": "Create side-by-side comparison of multiple runs",
+      "priority": "LOW",
+      "passes": false,
+      "steps": [
+        "Create src/components/profiling/CompareView.tsx",
+        "Allow selecting 2-4 runs to compare",
+        "Show metrics side by side",
+        "Highlight differences",
+        "Show overlay charts for direct comparison",
+        "Calculate statistical differences"
+      ]
+    },
+    {
+      "id": "EP-063",
+      "title": "Frontend - HistoryBrowser Container",
+      "description": "Compose history browser with list. detail, and compare",
+      "priority": "MEDIUM",
+      "passes": false,
+      "steps": [
+        "Create src/components/profiling/HistoryBrowser.tsx",
+        "Layout: RunList on left",
+        "Layout: RunDetail or CompareView on right",
+        "Handle run selection state",
+        "Handle compare mode toggle"
+      ]
+    },
+    {
+      "id": "EP-064",
+      "title": "Frontend - Navigation Integration",
+      "description": "Add Energy Profiler to main dashboard navigation",
+      "priority": "HIGH",
+      "passes": false,
+      "steps": [
+        "Add Energy Profiler tab to main page.tsx",
+        "Add icon for the tab",
+        "Handle tab switching state",
+        "Lazy load EnergyProfilerPanel component"
+      ]
+    },
+    {
+      "id": "EP-065",
+      "title": "Backend - Error Handling",
+      "description": "Add comprehensive error handling to profiling system",
+      "priority": "HIGH",
+      "passes": false,
+      "steps": [
+        "Handle powermetrics permission errors gracefully",
+        "Handle model loading errors during profiled inference",
+        "Handle database write errors",
+        "Handle WebSocket disconnection during profiling",
+        "Return meaningful error messages to frontend",
+        "Log errors for debugging"
+      ]
+    },
+    {
+      "id": "EP-066",
+      "title": "Backend - Performance Optimization",
+      "description": "Minimize profiling overhead",
+      "priority": "HIGH",
+      "passes": false,
+      "steps": [
+        "Profile the profiler to identify bottlenecks",
+        "Use batch database inserts",
+        "Minimize tensor copies for activation stats",
+        "Use efficient data structures for metric storage",
+        "Add option to disable deep profiling for speed",
+        "Document overhead percentages"
+      ]
+    },
+    {
+      "id": "EP-067",
+      "title": "Backend - Data Retention Policies",
+      "description": "Add ability to manage profiling data retention",
+      "priority": "LOW",
+      "passes": false,
+      "steps": [
+        "Add config for max runs to keep",
+        "Add config for max age of runs",
+        "Implement cleanup job to remove old runs",
+        "Add manual cleanup endpoint",
+        "Add database size reporting"
+      ]
+    },
+    {
+      "id": "EP-068",
+      "title": "Documentation - Setup Guide",
+      "description": "Document Energy Profiler setup and usage",
+      "priority": "MEDIUM",
+      "passes": false,
+      "steps": [
+        "Document sudoers configuration steps",
+        "Document backend startup with profiling enabled",
+        "Document frontend profiling panel usage",
+        "Document interpretation of metrics",
+        "Add troubleshooting section"
+      ]
+    },
+    {
+      "id": "EP-069",
+      "title": "Testing - PowerMonitor Unit Tests",
+      "description": "Add unit tests for PowerMonitor class",
+      "priority": "MEDIUM",
+      "passes": false,
+      "steps": [
+        "Test plist parsing with sample data",
+        "Test start/stop lifecycle",
+        "Test sample collection",
+        "Mock powermetrics subprocess for CI",
+        "Test error handling"
+      ]
+    },
+    {
+      "id": "EP-070",
+      "title": "Testing - LayerProfiler Unit Tests",
+      "description": "Add unit tests for LayerProfiler class",
+      "priority": "MEDIUM",
+      "passes": false,
+      "steps": [
+        "Test hook registration on mock model",
+        "Test timing capture",
+        "Test activation stats calculation",
+        "Test hook cleanup",
+        "Test context manager behavior"
+      ]
+    },
+    {
+      "id": "EP-071",
+      "title": "Testing - Database Unit Tests",
+      "description": "Add unit tests for ProfileDatabase class",
+      "priority": "MEDIUM",
+      "passes": false,
+      "steps": [
+        "Test schema creation",
+        "Test CRUD operations",
+        "Test query methods",
+        "Test batch inserts",
+        "Test cascading deletes"
+      ]
+    },
+    {
+      "id": "EP-072",
+      "title": "Testing - Integration Tests",
+      "description": "Add end-to-end integration tests",
+      "priority": "MEDIUM",
+      "passes": false,
+      "steps": [
+        "Test full profiled inference with small model",
+        "Test data flow from profiler to database",
+        "Test API endpoints return correct data",
+        "Test WebSocket streaming",
+        "Test export functionality"
+      ]
+    },
+    {
+      "id": "EP-073",
+      "title": "Testing - Frontend Component Tests",
+      "description": "Add tests for React profiling components",
+      "priority": "LOW",
+      "passes": false,
+      "steps": [
+        "Test EnergyProfilerPanel rendering",
+        "Test ProfilingControls interactions",
+        "Test chart components with mock data",
+        "Test WebSocket hook behavior",
+        "Test context state management"
+      ]
+    }
+  ]
+}
