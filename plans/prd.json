@@ -103,7 +103,7 @@
       "title": "Project Setup and Dependencies",
       "description": "Set up project structure and install required dependencies",
       "priority": "CRITICAL",
-      "passes": false,
+      "passes": true,
       "steps": [
         "Add pynvml, psutil to requirements.txt (power monitoring helpers)",
         "Add d3, d3-sankey to package.json for visualizations",

@@ -7,3 +7,13 @@ Features: powermetrics integration, per-layer/per-token profiling, SQLite storag
 
 ---
 
+## 2026-01-13
+### EP-001: Project Setup and Dependencies - COMPLETED
+- Added pynvml and psutil to backend/requirements.txt for power monitoring
+- Added d3 and d3-sankey to package.json for frontend visualizations
+- Added TypeScript type definitions for d3 libraries
+- Created backend/profiling/ directory structure
+- Created src/components/profiling/charts/ directory structure
+- Created backend/profiling/__init__.py with module documentation
+- Verified Python syntax and TypeScript compilation (npm build successful)
+

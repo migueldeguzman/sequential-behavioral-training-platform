@@ -10,3 +10,7 @@ python-multipart==0.0.6
 torch>=2.0.0
 transformers>=4.36.0
 datasets>=2.16.0
+
+# Energy profiling dependencies
+pynvml>=12.0.0
+psutil>=5.9.0
