@@ -941,6 +941,85 @@ class ProfileDatabase:
 
             summary["token_energy_breakdown"] = breakdown
 
+        # Calculate energy efficiency metrics (EP-076)
+        efficiency_metrics = {}
+
+        # Total energy per token (mJ/token)
+        if summary.get("token_count") and summary["token_count"] > 0:
+            efficiency_metrics["total_energy_per_token_mj"] = summary["total_energy_mj"] / summary["token_count"]
+        else:
+            efficiency_metrics["total_energy_per_token_mj"] = 0
+
+        # Prefill energy per token
+        if summary.get("input_token_count") and summary["input_token_count"] > 0:
+            efficiency_metrics["prefill_energy_per_token_mj"] = summary.get("prefill_energy_mj", 0) / summary["input_token_count"]
+        else:
+            efficiency_metrics["prefill_energy_per_token_mj"] = 0
+
+        # Decode energy per token
+        if summary.get("output_token_count") and summary["output_token_count"] > 0:
+            efficiency_metrics["decode_energy_per_token_mj"] = summary.get("decode_energy_mj", 0) / summary["output_token_count"]
+        else:
+            efficiency_metrics["decode_energy_per_token_mj"] = 0
+
+        # Energy per million parameters (need model parameter count - placeholder for now)
+        # This will be properly implemented when model features are extracted
+        efficiency_metrics["energy_per_million_params_mj"] = None
+
+        # Tokens per joule (efficiency score - higher is better)
+        if summary.get("total_energy_mj") and summary["total_energy_mj"] > 0:
+            # Convert mJ to J: divide by 1000
+            total_energy_j = summary["total_energy_mj"] / 1000.0
+            if summary.get("token_count") and summary["token_count"] > 0:
+                efficiency_metrics["tokens_per_joule"] = summary["token_count"] / total_energy_j
+            else:
+                efficiency_metrics["tokens_per_joule"] = 0
+        else:
+            efficiency_metrics["tokens_per_joule"] = 0
+
+        # Power utilization percentage (actual vs TDP - needs hardware TDP config)
+        # For M4 Max, estimated TDP is ~90W for CPU+GPU combined
+        # This is a placeholder - should be configurable
+        M4_MAX_ESTIMATED_TDP_MW = 90000  # 90W in milliwatts
+
+        # Get average total power across all samples
+        cursor.execute(
+            """
+            SELECT AVG(total_power_mw) as avg_total_power_mw
+            FROM power_samples
+            WHERE run_id = ? AND phase != 'idle'
+            """,
+            (run_id,)
+        )
+        avg_power_row = cursor.fetchone()
+        if avg_power_row and avg_power_row["avg_total_power_mw"]:
+            avg_power_mw = avg_power_row["avg_total_power_mw"]
+            efficiency_metrics["avg_power_mw"] = avg_power_mw
+            efficiency_metrics["power_utilization_percentage"] = (avg_power_mw / M4_MAX_ESTIMATED_TDP_MW) * 100
+        else:
+            efficiency_metrics["avg_power_mw"] = 0
+            efficiency_metrics["power_utilization_percentage"] = 0
+
+        # Joules per token (standardized metric from TokenPowerBench)
+        # Convert mJ/token to J/token
+        if efficiency_metrics["total_energy_per_token_mj"]:
+            efficiency_metrics["joules_per_token"] = efficiency_metrics["total_energy_per_token_mj"] / 1000.0
+        else:
+            efficiency_metrics["joules_per_token"] = 0
+
+        # Joules per input token and output token
+        if efficiency_metrics["prefill_energy_per_token_mj"]:
+            efficiency_metrics["joules_per_input_token"] = efficiency_metrics["prefill_energy_per_token_mj"] / 1000.0
+        else:
+            efficiency_metrics["joules_per_input_token"] = 0
+
+        if efficiency_metrics["decode_energy_per_token_mj"]:
+            efficiency_metrics["joules_per_output_token"] = efficiency_metrics["decode_energy_per_token_mj"] / 1000.0
+        else:
+            efficiency_metrics["joules_per_output_token"] = 0
+
+        summary["efficiency_metrics"] = efficiency_metrics
+
         return summary
 
     def get_tokens(self, run_id: str) -> list[dict]:

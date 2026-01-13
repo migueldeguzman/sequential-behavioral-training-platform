@@ -304,12 +304,17 @@ export interface ProfilingRunSummary {
     duration_ms: number;
   }[];
   efficiency_metrics: {
-    joules_per_token: number;
-    prefill_energy_per_token: number;
-    decode_energy_per_token: number;
-    tokens_per_second: number;
-    tokens_per_joule: number;
-    energy_delay_product: number;
+    // EP-076: Comprehensive efficiency metrics
+    total_energy_per_token_mj: number; // mJ per token (all tokens)
+    prefill_energy_per_token_mj: number; // mJ per input token
+    decode_energy_per_token_mj: number; // mJ per output token
+    energy_per_million_params_mj: number | null; // mJ per million parameters (requires model features)
+    tokens_per_joule: number; // Efficiency score (higher is better)
+    power_utilization_percentage: number; // Actual power vs TDP %
+    avg_power_mw: number; // Average power during active inference
+    joules_per_token: number; // J per token (standardized TokenPowerBench metric)
+    joules_per_input_token: number; // J per input token
+    joules_per_output_token: number; // J per output token
   };
   token_energy_breakdown?: {
     input_energy_mj: number;

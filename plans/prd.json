@@ -1244,7 +1244,7 @@
       "title": "Energy Efficiency Metrics Dashboard",
       "description": "Calculate and display key energy efficiency metrics per run",
       "priority": "HIGH",
-      "passes": false,
+      "passes": true,
       "reference": "Paper uses: Wh per prompt, energy per token, normalized by model size",
       "steps": [
         "Calculate total_energy_per_token (mJ/token)",

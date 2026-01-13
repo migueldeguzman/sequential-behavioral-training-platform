@@ -2633,3 +2633,37 @@ Testing:
 
 Updated PRD: EP-084 passes = true
 
+
+
+---
+2026-01-14: EP-076 - Energy Efficiency Metrics Dashboard - COMPLETED
+
+Feature: Comprehensive energy efficiency metrics calculation and display
+Priority: HIGH
+
+Implementation Summary:
+
+Backend (database.py):
+- Extended get_run_summary() method with comprehensive efficiency metrics calculation
+- Added total_energy_per_token_mj calculation
+- Added prefill_energy_per_token_mj and decode_energy_per_token_mj
+- Added tokens_per_joule calculation (efficiency score)
+- Added power_utilization_percentage (vs M4 Max 90W TDP estimate)
+- Added avg_power_mw from power_samples (excluding idle phase)
+- Added standardized joules_per_token metric (TokenPowerBench standard)
+- All metrics added to efficiency_metrics dictionary
+
+Frontend:
+- Updated ProfilingRunSummary.efficiency_metrics TypeScript interface
+- Created EfficiencyMetricsCard.tsx component with comprehensive display
+- Primary metric: Joules per token with efficiency rating
+- Grid display of tokens_per_joule, power utilization, avg power, energy per token
+- Input vs Output token energy comparison section
+- Responsive design with Tailwind CSS
+
+Testing:
+- TypeScript compilation: PASSED
+- Build successful with only non-breaking ESLint warnings
+- Fixed react/no-unescaped-entities errors
+
+Updated PRD: EP-076 passes = true
