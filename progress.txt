@@ -277,3 +277,42 @@ Features: powermetrics integration, per-layer/per-token profiling, SQLite storag
 - Verified Python syntax with py_compile (no errors)
 - Updated PRD: EP-014 passes = true
 
+### EP-015: DeepAttentionProfiler - Extra Metrics - COMPLETED
+- Extended AttentionOperationMetrics dataclass with additional attention metrics
+  - attention_entropy_per_head: List[float] - Shannon entropy for each attention head
+  - max_attention_weight_per_head: List[float] - Maximum attention weight per head
+  - attention_sparsity_per_head: List[float] - Fraction of near-zero weights per head
+  - avg_attention_entropy: float - Average entropy across all heads
+  - avg_max_attention_weight: float - Average max weight across all heads
+  - avg_attention_sparsity: float - Average sparsity across all heads
+- Implemented _compute_attention_metrics() static method for detailed attention analysis
+  - Accepts attention_weights tensor of shape (batch, num_heads, seq_len, seq_len)
+  - Computes Shannon entropy per head: -sum(p * log(p)) averaged across query positions
+  - Computes maximum attention weight per head for focus analysis
+  - Computes sparsity per head with configurable threshold (default: 0.01)
+  - Handles both 4D (multi-head) and 3D (single-head) attention weight tensors
+  - Averages metrics across batch dimension for stability
+  - Returns dictionary with per-head metrics and cross-head averages
+  - Includes epsilon (1e-10) to prevent log(0) in entropy calculation
+- Enhanced _create_detailed_instrumented_forward() to capture attention weights
+  - Forces output_attentions=True internally to access attention weights
+  - Extracts attention weights from forward return tuple (typically second element)
+  - Calls _compute_attention_metrics() to compute all extra metrics
+  - Stores computed metrics in AttentionOperationMetrics dataclass
+  - Respects original output_attentions parameter in return value (strips weights if not requested)
+  - Graceful fallback if attention weights unavailable or metric computation fails
+- Enhanced _create_instrumented_forward() (simple version) with same attention metric capture
+  - Attempts to request attention weights via output_attentions=True
+  - Computes and stores extra metrics when weights available
+  - Returns result in original format matching user's output_attentions parameter
+  - Error handling prevents profiling failures from affecting inference
+- Tested implementation with synthetic attention weights (shape: 1, 4, 10, 10)
+  - Verified entropy computation returns reasonable values (~1.9 for uniform attention)
+  - Verified max weight computation detects peak attention values (~0.5)
+  - Verified sparsity computation with configurable threshold (~0.03 for softmax output)
+  - Confirmed per-head metrics stored as lists with correct length (num_heads)
+  - Confirmed averages computed correctly across heads
+- Verified Python syntax with py_compile (no errors)
+- Verified module imports successfully with all new fields present
+- Updated PRD: EP-015 passes = true
+

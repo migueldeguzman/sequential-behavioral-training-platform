@@ -321,7 +321,7 @@
       "title": "DeepAttentionProfiler - Extra Metrics",
       "description": "Capture additional attention metrics beyond timing",
       "priority": "HIGH",
-      "passes": false,
+      "passes": true,
       "steps": [
         "Compute attention entropy per head",
         "Compute max attention weight per head",

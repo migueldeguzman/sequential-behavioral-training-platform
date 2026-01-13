@@ -23,6 +23,14 @@ class AttentionOperationMetrics:
     value_matmul_time: float = 0.0  # Time for attention @ V
     total_time: float = 0.0  # Total attention time
 
+    # Extra metrics (EP-015)
+    attention_entropy_per_head: List[float] = field(default_factory=list)  # Entropy for each head
+    max_attention_weight_per_head: List[float] = field(default_factory=list)  # Max weight for each head
+    attention_sparsity_per_head: List[float] = field(default_factory=list)  # Sparsity for each head
+    avg_attention_entropy: float = 0.0  # Average entropy across heads
+    avg_max_attention_weight: float = 0.0  # Average max weight across heads
+    avg_attention_sparsity: float = 0.0  # Average sparsity across heads
+
 
 @dataclass
 class DeepOperationMetrics:
@@ -62,6 +70,77 @@ class DeepAttentionProfiler:
         """Reset all stored metrics."""
         if not hasattr(self.metrics_storage, 'metrics'):
             self.metrics_storage.metrics = []
+
+    @staticmethod
+    def _compute_attention_metrics(attention_weights: torch.Tensor, sparsity_threshold: float = 0.01) -> Dict[str, Any]:
+        """
+        Compute detailed attention metrics from attention weights.
+
+        Args:
+            attention_weights: Attention weights tensor of shape (batch, num_heads, seq_len, seq_len)
+            sparsity_threshold: Threshold below which weights are considered sparse (default: 0.01)
+
+        Returns:
+            Dictionary containing per-head metrics and averages
+        """
+        metrics = {
+            'entropy_per_head': [],
+            'max_weight_per_head': [],
+            'sparsity_per_head': []
+        }
+
+        # Handle different attention weight shapes
+        if attention_weights.dim() == 4:
+            # Shape: (batch, num_heads, seq_len, seq_len)
+            batch_size, num_heads, seq_len, _ = attention_weights.shape
+
+            for head_idx in range(num_heads):
+                # Extract attention weights for this head (average across batch)
+                head_weights = attention_weights[:, head_idx, :, :].mean(dim=0)  # Shape: (seq_len, seq_len)
+
+                # Compute entropy per head
+                # Entropy = -sum(p * log(p)) for each query position, then average
+                # Add small epsilon to avoid log(0)
+                epsilon = 1e-10
+                head_weights_safe = head_weights + epsilon
+                entropy_per_query = -(head_weights_safe * torch.log(head_weights_safe)).sum(dim=-1)
+                avg_entropy = entropy_per_query.mean().item()
+                metrics['entropy_per_head'].append(avg_entropy)
+
+                # Compute max attention weight per head
+                max_weight = head_weights.max().item()
+                metrics['max_weight_per_head'].append(max_weight)
+
+                # Compute sparsity per head (percentage of weights below threshold)
+                sparsity = (head_weights < sparsity_threshold).float().mean().item()
+                metrics['sparsity_per_head'].append(sparsity)
+
+        elif attention_weights.dim() == 3:
+            # Shape: (batch, seq_len, seq_len) - single head or already averaged
+            batch_size, seq_len, _ = attention_weights.shape
+
+            # Average across batch
+            weights = attention_weights.mean(dim=0)
+
+            # Compute metrics for single head
+            epsilon = 1e-10
+            weights_safe = weights + epsilon
+            entropy_per_query = -(weights_safe * torch.log(weights_safe)).sum(dim=-1)
+            avg_entropy = entropy_per_query.mean().item()
+            metrics['entropy_per_head'].append(avg_entropy)
+
+            max_weight = weights.max().item()
+            metrics['max_weight_per_head'].append(max_weight)
+
+            sparsity = (weights < sparsity_threshold).float().mean().item()
+            metrics['sparsity_per_head'].append(sparsity)
+
+        # Compute averages across heads
+        metrics['avg_entropy'] = sum(metrics['entropy_per_head']) / len(metrics['entropy_per_head']) if metrics['entropy_per_head'] else 0.0
+        metrics['avg_max_weight'] = sum(metrics['max_weight_per_head']) / len(metrics['max_weight_per_head']) if metrics['max_weight_per_head'] else 0.0
+        metrics['avg_sparsity'] = sum(metrics['sparsity_per_head']) / len(metrics['sparsity_per_head']) if metrics['sparsity_per_head'] else 0.0
+
+        return metrics
 
     def _find_attention_modules(self) -> List[Tuple[str, nn.Module]]:
         """
@@ -117,9 +196,11 @@ class DeepAttentionProfiler:
                 if torch.backends.mps.is_available():
                     torch.mps.synchronize()
 
-                # Call original forward - we'll try to intercept internal operations
-                # Note: This is a simplified version. Full implementation would
-                # require deeper inspection of the attention implementation
+                # Try to request attention weights for extra metrics (EP-015)
+                original_output_attentions = kwargs.get('output_attentions', False)
+                kwargs['output_attentions'] = True
+
+                # Call original forward
                 result = original_forward(*args, **kwargs)
 
                 if torch.backends.mps.is_available():
@@ -129,10 +210,33 @@ class DeepAttentionProfiler:
                 total_end = time.perf_counter()
                 metrics.total_time = (total_end - total_start) * 1000  # Convert to ms
 
+                # Try to extract and compute attention metrics (EP-015)
+                attention_weights = None
+                if isinstance(result, tuple) and len(result) >= 2:
+                    potential_attn_weights = result[1]
+                    if isinstance(potential_attn_weights, torch.Tensor):
+                        attention_weights = potential_attn_weights
+
+                if attention_weights is not None:
+                    try:
+                        attn_metrics = self._compute_attention_metrics(attention_weights)
+                        metrics.attention_entropy_per_head = attn_metrics['entropy_per_head']
+                        metrics.max_attention_weight_per_head = attn_metrics['max_weight_per_head']
+                        metrics.attention_sparsity_per_head = attn_metrics['sparsity_per_head']
+                        metrics.avg_attention_entropy = attn_metrics['avg_entropy']
+                        metrics.avg_max_attention_weight = attn_metrics['avg_max_weight']
+                        metrics.avg_attention_sparsity = attn_metrics['avg_sparsity']
+                    except Exception as e:
+                        pass
+
                 # Store metrics
                 if not hasattr(self.metrics_storage, 'metrics'):
                     self.metrics_storage.metrics = []
                 self.metrics_storage.metrics.append(metrics)
+
+                # Return result in original format
+                if not original_output_attentions and isinstance(result, tuple) and len(result) >= 2:
+                    return (result[0],) + result[2:] if len(result) > 2 else result[0]
 
                 return result
 
@@ -178,14 +282,13 @@ class DeepAttentionProfiler:
                     torch.mps.synchronize()
 
                 # Call original forward and capture timing
-                # For now, we capture total time
-                # Full implementation would require patching internal operations
+                # Request attention weights to compute extra metrics (EP-015)
                 result = original_forward(
                     hidden_states,
                     attention_mask=attention_mask,
                     position_ids=position_ids,
                     past_key_value=past_key_value,
-                    output_attentions=output_attentions,
+                    output_attentions=True,  # Always request attention weights for metrics
                     use_cache=use_cache,
                     **kwargs
                 )
@@ -197,10 +300,38 @@ class DeepAttentionProfiler:
                 total_end = time.perf_counter()
                 metrics.total_time = (total_end - total_start) * 1000
 
+                # Extract attention weights if available (EP-015)
+                # HuggingFace models typically return (output, attention_weights) or (output, attention_weights, cache)
+                attention_weights = None
+                if isinstance(result, tuple) and len(result) >= 2:
+                    # Second element is usually attention weights when output_attentions=True
+                    potential_attn_weights = result[1]
+                    if isinstance(potential_attn_weights, torch.Tensor):
+                        attention_weights = potential_attn_weights
+
+                # Compute extra metrics from attention weights (EP-015)
+                if attention_weights is not None:
+                    try:
+                        attn_metrics = self._compute_attention_metrics(attention_weights)
+                        metrics.attention_entropy_per_head = attn_metrics['entropy_per_head']
+                        metrics.max_attention_weight_per_head = attn_metrics['max_weight_per_head']
+                        metrics.attention_sparsity_per_head = attn_metrics['sparsity_per_head']
+                        metrics.avg_attention_entropy = attn_metrics['avg_entropy']
+                        metrics.avg_max_attention_weight = attn_metrics['avg_max_weight']
+                        metrics.avg_attention_sparsity = attn_metrics['avg_sparsity']
+                    except Exception as e:
+                        # If metric computation fails, continue without extra metrics
+                        pass
+
                 # Store metrics
                 if not hasattr(self.metrics_storage, 'metrics'):
                     self.metrics_storage.metrics = []
                 self.metrics_storage.metrics.append(metrics)
+
+                # Return original result format (respect output_attentions parameter)
+                if not output_attentions and isinstance(result, tuple) and len(result) >= 2:
+                    # User didn't request attention weights, return without them
+                    return (result[0],) + result[2:] if len(result) > 2 else result[0]
 
                 return result
 
