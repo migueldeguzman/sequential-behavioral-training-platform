@@ -962,3 +962,45 @@ Features: powermetrics integration, per-layer/per-token profiling, SQLite storag
 - Verified Python syntax with py_compile (no errors)
 - Updated PRD: EP-028 passes = true
 
+### EP-029: Profiling Run Detail Endpoint - COMPLETED
+- Implemented GET /api/profiling/run/{run_id} endpoint in backend/main.py (lines 1839-1930)
+  - Retrieves complete profiling run data including all nested metrics
+  - Validates run_id exists and returns 404 if not found
+  - Connects to ProfileDatabase and queries all related tables
+  - Returns comprehensive nested data structure:
+    * run: Complete run metadata (model, prompt, response, timestamps, tags, etc.)
+    * power_samples: All power samples ordered by timestamp
+    * pipeline_sections: All section timings ordered by start time
+    * tokens: All tokens with nested layer and component metrics
+  - Implements full hierarchical data structure:
+    * Each token includes array of layer metrics
+    * Each layer includes array of component metrics
+    * Each component includes array of deep operation metrics (if present)
+  - Uses database.get_run() to fetch basic run metadata
+  - Uses database.get_power_timeline() to fetch all power samples
+  - Executes SQL query to fetch all pipeline_sections ordered by start_time_ms
+  - Uses database.get_tokens() to fetch all tokens ordered by token_index
+  - For each token:
+    * Calls database.get_layer_metrics(token_id) to fetch layer metrics
+    * For each layer:
+      - Calls database.get_component_metrics(layer_metric_id) to fetch component metrics
+      - For each component:
+        * Executes SQL query to fetch deep_operation_metrics ordered by operation_name
+        * Attaches deep_operations array to component dictionary
+      - Attaches components array to layer dictionary
+    * Attaches layers array to token dictionary
+  - Returns complete JSON response with four top-level fields
+  - Comprehensive error handling:
+    * HTTPException for 404 when run not found
+    * HTTPException with 500 status for database errors
+    * Re-raises HTTPException to preserve error codes
+    * Logs all errors with detailed messages
+  - Proper resource management:
+    * Closes database connection after query completion
+    * try/except blocks protect against partial data retrieval
+  - Supports both module and deep profiling depths:
+    * Deep operation metrics included only if profiling_depth='deep'
+    * Gracefully handles missing deep metrics (empty arrays)
+- Verified Python syntax with py_compile (no errors)
+- Updated PRD: EP-029 passes = true
+

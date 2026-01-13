@@ -1836,6 +1836,100 @@ async def get_profiling_runs(
         raise HTTPException(status_code=500, detail=f"Failed to retrieve profiling runs: {str(e)}")
 
 
+@app.get("/api/profiling/run/{run_id}")
+async def get_profiling_run(run_id: str):
+    """
+    Get full profiling run data including all nested metrics.
+
+    This endpoint returns complete profiling data for a single run:
+    - Run metadata (model, prompt, response, timestamps)
+    - All power samples with full timeline
+    - All pipeline sections with timing and energy
+    - All tokens with per-token metrics
+    - Layer metrics nested under each token
+    - Component metrics nested under each layer
+    - Deep operation metrics (if profiling_depth='deep')
+
+    Args:
+        run_id: Unique identifier for the profiling run
+
+    Returns:
+        Complete nested profiling data structure
+    """
+    from profiling.database import ProfileDatabase
+
+    try:
+        database = ProfileDatabase()
+        database.connect()
+
+        # Get basic run data
+        run = database.get_run(run_id)
+        if not run:
+            raise HTTPException(status_code=404, detail=f"Profiling run {run_id} not found")
+
+        # Get all power samples
+        power_samples = database.get_power_timeline(run_id)
+
+        # Get all pipeline sections
+        cursor = database.conn.cursor()
+        cursor.execute(
+            """
+            SELECT * FROM pipeline_sections
+            WHERE run_id = ?
+            ORDER BY start_time_ms
+            """,
+            (run_id,)
+        )
+        pipeline_sections = [dict(row) for row in cursor.fetchall()]
+
+        # Get all tokens with nested layer and component metrics
+        tokens = database.get_tokens(run_id)
+
+        # For each token, get layer metrics
+        for token in tokens:
+            token_id = token["id"]
+            layer_metrics = database.get_layer_metrics(token_id)
+
+            # For each layer, get component metrics
+            for layer in layer_metrics:
+                layer_metric_id = layer["id"]
+                component_metrics = database.get_component_metrics(layer_metric_id)
+
+                # For each component, get deep operation metrics if they exist
+                for component in component_metrics:
+                    component_metric_id = component["id"]
+                    cursor.execute(
+                        """
+                        SELECT * FROM deep_operation_metrics
+                        WHERE component_metric_id = ?
+                        ORDER BY operation_name
+                        """,
+                        (component_metric_id,)
+                    )
+                    deep_operations = [dict(row) for row in cursor.fetchall()]
+                    component["deep_operations"] = deep_operations
+
+                layer["components"] = component_metrics
+
+            token["layers"] = layer_metrics
+
+        database.close()
+
+        # Build complete response structure
+        return {
+            "run": run,
+            "power_samples": power_samples,
+            "pipeline_sections": pipeline_sections,
+            "tokens": tokens,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to retrieve profiling run {run_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve profiling run: {str(e)}")
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
