@@ -316,3 +316,42 @@ Features: powermetrics integration, per-layer/per-token profiling, SQLite storag
 - Verified module imports successfully with all new fields present
 - Updated PRD: EP-015 passes = true
 
+### EP-016: DeepAttentionProfiler - MLP Operations - COMPLETED
+- Extended DeepAttentionProfiler to profile MLP (Multi-Layer Perceptron) operations
+- Created MLPOperationMetrics dataclass for individual MLP operation timings
+  - gate_proj_time: Time for gate projection and activation (GELU/SiLU)
+  - up_proj_time: Time for up projection and activation
+  - gate_up_mult_time: Time for gate * up element-wise multiplication
+  - down_proj_time: Time for down projection
+  - total_time: Total MLP module time
+  - activation_kill_ratio: Percentage of negative inputs to activation function
+- Updated DeepOperationMetrics dataclass to include mlp_ops field
+- Added original_mlp_forwards dictionary to store original MLP forward methods
+- Implemented _find_mlp_modules() to locate all MLP modules in model
+  - Searches for common MLP patterns: 'mlp', 'feed_forward', 'ffn', 'fc'
+  - Excludes attention modules from MLP detection
+  - Returns list of (name, module) tuples for patching
+- Implemented _create_instrumented_mlp_forward() wrapper function
+  - Instruments gated MLP architectures (Llama, Mistral style)
+  - Times gate projection and applies activation function (GELU/SiLU)
+  - Times up projection separately
+  - Times gate * up element-wise multiplication
+  - Times down projection
+  - Computes activation kill ratio from gate projection inputs (negative input percentage)
+  - Uses torch.mps.synchronize() on Apple Silicon for accurate timing
+  - Stores metrics in thread-local storage (self.metrics_storage.mlp_metrics)
+  - Falls back to original behavior on any profiling errors
+- Enhanced patch() method to patch both attention and MLP modules
+  - Patches attention modules (existing behavior)
+  - Patches MLP modules with instrumented MLP forward
+  - Sets is_patched flag after both types are patched
+- Enhanced unpatch() method to restore both attention and MLP modules
+  - Restores original attention forwards (existing behavior)
+  - Restores original MLP forwards from stored dictionary
+  - Clears both original_forwards and original_mlp_forwards dictionaries
+- Implemented get_mlp_metrics() to retrieve all collected MLPOperationMetrics
+- Enhanced reset() to clear both attention and MLP metrics from thread-local storage
+- All MLP profiling is thread-safe using threading.local() storage
+- Verified Python syntax with py_compile (no errors)
+- Updated PRD: EP-016 passes = true
+

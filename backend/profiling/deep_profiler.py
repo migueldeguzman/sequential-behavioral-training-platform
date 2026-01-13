@@ -33,24 +33,46 @@ class AttentionOperationMetrics:
 
 
 @dataclass
+class MLPOperationMetrics:
+    """Metrics for individual MLP operations (EP-016)."""
+    gate_proj_time: float = 0.0  # Time for gate projection and activation
+    up_proj_time: float = 0.0  # Time for up projection and activation
+    gate_up_mult_time: float = 0.0  # Time for gate * up multiplication
+    down_proj_time: float = 0.0  # Time for down projection
+    total_time: float = 0.0  # Total MLP time
+
+    # Activation kill ratio (percentage of negative inputs to activation)
+    activation_kill_ratio: float = 0.0
+
+
+@dataclass
 class DeepOperationMetrics:
     """Complete metrics for a deep profiling session."""
     attention_ops: List[AttentionOperationMetrics] = field(default_factory=list)
+    mlp_ops: List[MLPOperationMetrics] = field(default_factory=list)
     layer_idx: Optional[int] = None
     token_idx: Optional[int] = None
 
 
 class DeepAttentionProfiler:
     """
-    Deep profiler for transformer attention operations.
+    Deep profiler for transformer attention and MLP operations.
 
-    Uses monkey-patching to instrument attention forward methods
+    Uses monkey-patching to instrument attention and MLP forward methods
     and capture timing for individual operations:
+
+    Attention operations:
     - Q @ K^T matmul
     - Scaling
     - Mask application
     - Softmax
     - Attention @ V matmul
+
+    MLP operations (EP-016):
+    - Gate projection and activation
+    - Up projection and activation
+    - Gate * up multiplication
+    - Down projection
     """
 
     def __init__(self, model: nn.Module):
@@ -63,6 +85,7 @@ class DeepAttentionProfiler:
         self.model = model
         self.is_patched = False
         self.original_forwards: Dict[str, Any] = {}
+        self.original_mlp_forwards: Dict[str, Any] = {}
         self.metrics_storage = threading.local()
         self._reset_metrics()
 
@@ -349,13 +372,144 @@ class DeepAttentionProfiler:
 
         return instrumented_forward
 
+    def _find_mlp_modules(self) -> List[Tuple[str, nn.Module]]:
+        """
+        Find all MLP modules in the model.
+
+        Returns:
+            List of (name, module) tuples for MLP modules
+        """
+        mlp_modules = []
+
+        # Common MLP module patterns in HuggingFace transformers
+        mlp_patterns = [
+            'mlp',
+            'feed_forward',
+            'ffn',
+            'fc'
+        ]
+
+        for name, module in self.model.named_modules():
+            # Check if this is an MLP module
+            for pattern in mlp_patterns:
+                if pattern in name.lower() and not any(skip in name.lower() for skip in ['attention', 'attn']):
+                    # Make sure it has a forward method
+                    if hasattr(module, 'forward'):
+                        mlp_modules.append((name, module))
+                        break
+
+        return mlp_modules
+
+    def _create_instrumented_mlp_forward(
+        self,
+        original_forward,
+        module_name: str
+    ):
+        """
+        Create an instrumented MLP forward method that times operations (EP-016).
+
+        Args:
+            original_forward: The original forward method
+            module_name: Name of the module being instrumented
+
+        Returns:
+            Instrumented forward method
+        """
+        def instrumented_forward(hidden_states):
+            metrics = MLPOperationMetrics()
+
+            # Start total timing
+            total_start = time.perf_counter()
+
+            try:
+                # For MPS (Apple Silicon), ensure synchronization before timing
+                if torch.backends.mps.is_available():
+                    torch.mps.synchronize()
+
+                # Get references to the submodules for detailed timing
+                # Common patterns: gate_proj, up_proj, down_proj, act_fn
+                module = None
+                for name, mod in self.model.named_modules():
+                    if name == module_name:
+                        module = mod
+                        break
+
+                if module is not None and hasattr(module, 'gate_proj') and hasattr(module, 'up_proj') and hasattr(module, 'down_proj'):
+                    # Detailed timing for gated MLP (like in Llama, Mistral)
+                    # Time gate projection and activation
+                    gate_start = time.perf_counter()
+                    gate_output = module.gate_proj(hidden_states)
+                    if hasattr(module, 'act_fn'):
+                        gate_output = module.act_fn(gate_output)
+                    if torch.backends.mps.is_available():
+                        torch.mps.synchronize()
+                    gate_end = time.perf_counter()
+                    metrics.gate_proj_time = (gate_end - gate_start) * 1000
+
+                    # Compute activation kill ratio for gate
+                    # For GELU/SiLU, negative inputs result in near-zero outputs
+                    if hasattr(module, 'act_fn'):
+                        with torch.no_grad():
+                            gate_input = module.gate_proj(hidden_states)
+                            negative_ratio = (gate_input < 0).float().mean().item()
+                            metrics.activation_kill_ratio = negative_ratio
+
+                    # Time up projection and activation
+                    up_start = time.perf_counter()
+                    up_output = module.up_proj(hidden_states)
+                    if torch.backends.mps.is_available():
+                        torch.mps.synchronize()
+                    up_end = time.perf_counter()
+                    metrics.up_proj_time = (up_end - up_start) * 1000
+
+                    # Time gate * up multiplication
+                    mult_start = time.perf_counter()
+                    intermediate = gate_output * up_output
+                    if torch.backends.mps.is_available():
+                        torch.mps.synchronize()
+                    mult_end = time.perf_counter()
+                    metrics.gate_up_mult_time = (mult_end - mult_start) * 1000
+
+                    # Time down projection
+                    down_start = time.perf_counter()
+                    output = module.down_proj(intermediate)
+                    if torch.backends.mps.is_available():
+                        torch.mps.synchronize()
+                    down_end = time.perf_counter()
+                    metrics.down_proj_time = (down_end - down_start) * 1000
+
+                else:
+                    # Fallback: just call original and time total
+                    output = original_forward(hidden_states)
+
+                if torch.backends.mps.is_available():
+                    torch.mps.synchronize()
+
+                # End total timing
+                total_end = time.perf_counter()
+                metrics.total_time = (total_end - total_start) * 1000
+
+                # Store metrics
+                if not hasattr(self.metrics_storage, 'mlp_metrics'):
+                    self.metrics_storage.mlp_metrics = []
+                self.metrics_storage.mlp_metrics.append(metrics)
+
+                return output
+
+            except Exception as e:
+                # If profiling fails, fall back to original behavior
+                return original_forward(hidden_states)
+
+        return instrumented_forward
+
     def patch(self):
         """
-        Patch all attention modules with instrumented versions.
+        Patch all attention and MLP modules with instrumented versions.
         """
         if self.is_patched:
             return
 
+        # Patch attention modules
         attention_modules = self._find_attention_modules()
 
         for name, module in attention_modules:
@@ -376,6 +530,19 @@ class DeepAttentionProfiler:
                     name
                 )
 
+        # Patch MLP modules (EP-016)
+        mlp_modules = self._find_mlp_modules()
+
+        for name, module in mlp_modules:
+            # Store original forward
+            self.original_mlp_forwards[name] = module.forward
+
+            # Replace with instrumented version
+            module.forward = self._create_instrumented_mlp_forward(
+                self.original_mlp_forwards[name],
+                name
+            )
+
         self.is_patched = True
 
     def unpatch(self):
@@ -385,6 +552,7 @@ class DeepAttentionProfiler:
         if not self.is_patched:
             return
 
+        # Restore attention modules
         attention_modules = self._find_attention_modules()
 
         for name, module in attention_modules:
@@ -392,11 +560,20 @@ class DeepAttentionProfiler:
                 module.forward = self.original_forwards[name]
 
         self.original_forwards.clear()
+
+        # Restore MLP modules (EP-016)
+        mlp_modules = self._find_mlp_modules()
+
+        for name, module in mlp_modules:
+            if name in self.original_mlp_forwards:
+                module.forward = self.original_mlp_forwards[name]
+
+        self.original_mlp_forwards.clear()
         self.is_patched = False
 
     def get_metrics(self) -> List[AttentionOperationMetrics]:
         """
-        Get all collected metrics.
+        Get all collected attention metrics.
 
         Returns:
             List of AttentionOperationMetrics
@@ -405,9 +582,22 @@ class DeepAttentionProfiler:
             return []
         return self.metrics_storage.metrics
 
+    def get_mlp_metrics(self) -> List[MLPOperationMetrics]:
+        """
+        Get all collected MLP metrics (EP-016).
+
+        Returns:
+            List of MLPOperationMetrics
+        """
+        if not hasattr(self.metrics_storage, 'mlp_metrics'):
+            return []
+        return self.metrics_storage.mlp_metrics
+
     def reset(self):
         """Reset collected metrics."""
         self._reset_metrics()
+        if hasattr(self.metrics_storage, 'mlp_metrics'):
+            self.metrics_storage.mlp_metrics = []
 
     def __enter__(self):
         """Context manager entry - applies patches."""

@@ -335,7 +335,7 @@
       "title": "DeepAttentionProfiler - MLP Operations",
       "description": "Profile deep operations within MLP blocks",
       "priority": "HIGH",
-      "passes": false,
+      "passes": true,
       "steps": [
         "Patch MLP forward method",
         "Time gate projection and activation",
