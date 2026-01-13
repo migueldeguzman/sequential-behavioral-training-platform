@@ -1563,6 +1563,148 @@ async def export_results(request: ExportRequest):
 
 # ==================== PROFILING SYSTEM ENDPOINTS ====================
 
+# Pydantic models for profiling
+class ProfiledGenerateRequest(BaseModel):
+    prompt: str
+    modelPath: str
+    profilingDepth: str = "module"  # "module" or "deep"
+    tags: Optional[str] = None
+    experimentName: Optional[str] = None
+    config: InferenceConfig = InferenceConfig()
+
+
+@app.post("/api/profiling/generate")
+async def profiled_generate(request: ProfiledGenerateRequest):
+    """
+    Generate text with full energy profiling.
+
+    This endpoint performs inference with comprehensive profiling of:
+    - Power consumption (CPU, GPU, ANE, DRAM)
+    - Layer and component timing
+    - Activation statistics
+    - Deep operation metrics (if profilingDepth='deep')
+
+    Returns the run_id for querying profiling data.
+    """
+    import torch
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+    from profiling.power_monitor import PowerMonitor
+    from profiling.layer_profiler import LayerProfiler
+    from profiling.deep_profiler import DeepAttentionProfiler
+    from profiling.database import ProfileDatabase
+    from profiling.pipeline_profiler import InferencePipelineProfiler
+
+    model_dir = Path(request.modelPath)
+    if not model_dir.exists():
+        raise HTTPException(status_code=404, detail=f"Model not found: {request.modelPath}")
+
+    try:
+        # Initialize profiling components
+        power_monitor = PowerMonitor(sample_interval_ms=100)
+        if not power_monitor.is_available():
+            raise HTTPException(
+                status_code=503,
+                detail="powermetrics not available. Run setup_powermetrics.sh to configure sudo access."
+            )
+
+        # Detect device
+        device = torch.device(
+            "mps" if torch.backends.mps.is_available() else
+            ("cuda" if torch.cuda.is_available() else "cpu")
+        )
+
+        # Load model and tokenizer
+        tokenizer = AutoTokenizer.from_pretrained(request.modelPath, trust_remote_code=True)
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
+
+        dtype = torch.float16 if device.type == "cuda" else torch.float32
+        model = AutoModelForCausalLM.from_pretrained(
+            request.modelPath,
+            torch_dtype=dtype,
+            low_cpu_mem_usage=True,
+            trust_remote_code=True
+        )
+        model.to(device)
+
+        # Initialize profilers
+        layer_profiler = LayerProfiler(model)
+        deep_profiler = None
+        if request.profilingDepth == "deep":
+            deep_profiler = DeepAttentionProfiler(model)
+            deep_profiler.patch()
+
+        database = ProfileDatabase()
+
+        # Create pipeline profiler
+        profiler = InferencePipelineProfiler(
+            power_monitor=power_monitor,
+            layer_profiler=layer_profiler,
+            deep_profiler=deep_profiler,
+            database=database
+        )
+
+        # Start profiling session
+        with profiler.run(
+            prompt=request.prompt,
+            model_name=model_dir.name,
+            profiling_depth=request.profilingDepth,
+            experiment_name=request.experimentName,
+            tags=request.tags
+        ) as session:
+            # Pre-inference phase
+            with session.section("tokenization", phase="pre_inference"):
+                inputs = tokenizer(request.prompt, return_tensors="pt", padding=True)
+
+            with session.section("tensor_transfer", phase="pre_inference"):
+                inputs = {k: v.to(device) for k, v in inputs.items()}
+
+            # Prefill phase (single forward pass for entire prompt)
+            with session.section("prefill", phase="prefill"):
+                # Generate will handle both prefill and decode internally
+                # We profile it as one operation here for simplicity
+                with torch.no_grad():
+                    output = model.generate(
+                        inputs["input_ids"],
+                        attention_mask=inputs["attention_mask"],
+                        max_length=request.config.maxLength,
+                        num_return_sequences=1,
+                        no_repeat_ngram_size=request.config.noRepeatNgramSize,
+                        do_sample=request.config.doSample,
+                        top_k=request.config.topK,
+                        top_p=request.config.topP,
+                        temperature=request.config.temperature,
+                        use_cache=True,
+                        pad_token_id=tokenizer.pad_token_id,
+                    )
+
+            # Post-inference phase
+            with session.section("detokenization", phase="post_inference"):
+                full_text = tokenizer.decode(output[0], skip_special_tokens=True)
+                if full_text.startswith(request.prompt):
+                    response = full_text[len(request.prompt):].strip()
+                else:
+                    response = full_text.strip()
+
+                session.response = response
+
+        # Cleanup
+        if deep_profiler:
+            deep_profiler.unpatch()
+        layer_profiler.detach()
+
+        # Data is automatically saved to database via profiler.run context manager
+        return {
+            "runId": session.run_id,
+            "response": response,
+            "message": "Profiled inference completed successfully"
+        }
+
+    except Exception as e:
+        logger.error(f"Profiled generation failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Profiled generation failed: {str(e)}")
+
+
 @app.get("/api/profiling/powermetrics/status")
 async def get_powermetrics_status():
     """Get powermetrics availability status."""

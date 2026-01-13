@@ -500,7 +500,7 @@
       "title": "Profiled Generate Endpoint",
       "description": "Create FastAPI endpoint for profiled inference",
       "priority": "HIGH",
-      "passes": false,
+      "passes": true,
       "steps": [
         "Create ProfiledGenerateRequest Pydantic model",
         "Add profiling_depth field (module/deep)",

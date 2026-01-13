@@ -864,3 +864,54 @@ Features: powermetrics integration, per-layer/per-token profiling, SQLite storag
 - Verified Python syntax with py_compile (no errors)
 - Updated PRD: EP-026 passes = true
 
+### EP-027: Profiled Generate Endpoint - COMPLETED
+- Created ProfiledGenerateRequest Pydantic model in backend/main.py (lines 1567-1573)
+  - prompt: str - The input prompt for text generation
+  - modelPath: str - Path to the model directory for inference
+  - profilingDepth: str = "module" - Profiling granularity ("module" or "deep")
+  - tags: Optional[str] = None - Optional tags for categorization
+  - experimentName: Optional[str] = None - Optional experiment name for organization
+  - config: InferenceConfig = InferenceConfig() - Inference parameters (temperature, top_k, etc.)
+- Implemented POST /api/profiling/generate endpoint (lines 1576-1705)
+  - Comprehensive profiled inference with full energy tracking
+  - Validates model path exists before starting profiling
+  - Checks powermetrics availability with helpful error message
+  - Loads model and tokenizer with trust_remote_code=True support
+  - Detects device (MPS for Apple Silicon, CUDA, or CPU)
+  - Uses appropriate dtype (float16 for CUDA, float32 otherwise)
+  - Initializes all profiling components:
+    * PowerMonitor with 100ms sample interval
+    * LayerProfiler for per-layer/per-component metrics
+    * DeepAttentionProfiler for operation-level metrics (if profilingDepth='deep')
+    * ProfileDatabase for storing all profiling data
+  - Creates InferencePipelineProfiler orchestrator
+  - Runs inference within profiler.run() context manager:
+    * Pre-inference phase: tokenization, tensor transfer sections
+    * Prefill phase: single forward pass for prompt processing
+    * Post-inference phase: detokenization section
+  - Automatically saves complete profiling data to database on completion
+  - Proper cleanup: unpatch deep profiler, detach layer profiler
+  - Returns run_id, response, and success message
+  - Comprehensive error handling with detailed error messages
+- Integration with existing profiling system:
+  - Uses InferencePipelineProfiler.run() context manager for lifecycle
+  - Uses session.section() for timing individual operations
+  - Power samples automatically correlated with sections
+  - All metrics saved to database automatically on context exit
+- Profiling captured for entire inference pipeline:
+  - Pre-inference: tokenization (encode), tensor transfer (to device)
+  - Prefill: model.generate() first forward pass
+  - Decode: model.generate() token-by-token generation (internal)
+  - Post-inference: detokenization (decode)
+- API response includes:
+  - runId: Unique identifier for this profiling run (UUID4)
+  - response: Generated text from the model
+  - message: Success confirmation
+- Error handling:
+  - 404 if model path not found
+  - 503 if powermetrics not available (with setup instructions)
+  - 500 for any generation or profiling failures
+- Verified Python syntax with py_compile (no errors)
+- Verified TypeScript compilation with npm run build (successful)
+- Updated PRD: EP-027 passes = true
+
