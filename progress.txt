@@ -1966,3 +1966,38 @@ Implementation details:
   - Clear unit indicators in option labels
 - TypeScript compilation verified with npm run build (successful)
 - Updated PRD: EP-051 passes = true
+
+## 2026-01-14
+### EP-052: Frontend - HeatmapChart Component - COMPLETED
+- Created src/components/profiling/charts/HeatmapChart.tsx with full Canvas-based implementation
+- Component features:
+  - Accepts data (number[][]), xLabels, yLabels as required props
+  - Configurable color scale with min/max gradient (defaults to blue scale)
+  - Optional width/height props for flexible sizing
+  - Optional onCellClick handler for drill-down functionality
+- Canvas rendering implementation:
+  - High DPI display support with devicePixelRatio scaling
+  - Efficient cell-by-cell rendering with color interpolation
+  - Color interpolation from min to max based on data value normalization
+  - Grid lines between cells for clarity
+- Interactive features:
+  - Hover effect shows tooltip with layer name, component name, and value
+  - Tooltip positioned dynamically near cursor
+  - Cursor changes to pointer when hovering cells
+  - Click handler triggers onCellClick with cell coordinates and value
+- Visual elements:
+  - X-axis labels (components) rendered at 45-degree angle
+  - Y-axis labels (layers) rendered vertically aligned
+  - Color scale legend showing gradient from min to max
+  - Legend displays min/max values with 2 decimal precision
+  - Axis titles: "Components" (bottom), "Layers" (left)
+- Layout constants:
+  - Margins: top=40, right=120, bottom=80, left=100
+  - Legend width: 20px, height: 200px
+  - All constants managed with useMemo to prevent re-render issues
+- Code quality:
+  - Fixed React hooks exhaustive-deps warning by including MARGIN in dependencies
+  - Fixed unused variable warning by removing unused event parameter
+  - TypeScript compilation verified with npm run build (successful, no warnings)
+  - Clean, maintainable code with clear comments
+- Updated PRD: EP-052 passes = true

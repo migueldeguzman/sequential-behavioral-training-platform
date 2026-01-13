@@ -875,7 +875,7 @@
       "title": "Frontend - HeatmapChart Component",
       "description": "Create static heatmap for analysis view",
       "priority": "HIGH",
-      "passes": false,
+      "passes": true,
       "steps": [
         "Create src/components/profiling/charts/HeatmapChart.tsx",
         "Accept data array, xLabels, yLabels props",
