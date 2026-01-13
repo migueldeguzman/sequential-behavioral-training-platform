@@ -2514,3 +2514,25 @@ Implementation Details:
 - TypeScript compilation: PASSED
 
 Updated PRD: EP-063 passes = true
+
+==============================================================================
+Date: 2026-01-14
+Feature: EP-074 - Model Architecture Feature Extraction
+Status: COMPLETED
+Description: Extract and store model architectural features for energy analysis
+
+Implementation Details:
+- Created backend/profiling/model_features.py
+- Implemented ModelFeatures dataclass with all architectural parameters
+- Extract num_layers, hidden_size, intermediate_size from model config
+- Extract num_attention_heads, num_key_value_heads for GQA/MQA detection
+- Calculate embedding_params, attention_params_per_layer, ffn_params_per_layer
+- Detect attention mechanism type (MHA/GQA/MQA)
+- Detect if model is MoE (Mixture of Experts)
+- Implemented extract_model_features() main function
+- Added helper functions: _detect_architecture_type, _detect_moe, _count_*_params
+- Added analysis functions: analyze_scaling_properties, compare_architectures
+- Inspired by Caravaca et al. 2025 "From Prompts to Power" research
+- Python syntax validation: PASSED
+
+Updated PRD: EP-074 passes = true

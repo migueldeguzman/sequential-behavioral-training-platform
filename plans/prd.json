@@ -1205,7 +1205,7 @@
       "title": "Model Architecture Feature Extraction",
       "description": "Extract and store model architectural features for energy analysis (inspired by Caravaca et al. 2025)",
       "priority": "HIGH",
-      "passes": false,
+      "passes": true,
       "reference": "Paper: 'From Prompts to Power' - model structure significantly impacts energy beyond parameter count",
       "steps": [
         "Create backend/profiling/model_features.py",
