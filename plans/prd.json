@@ -244,7 +244,7 @@
       "title": "LayerProfiler Class - Hook Registration",
       "description": "Create LayerProfiler to register PyTorch forward hooks on model components",
       "priority": "CRITICAL",
-      "passes": false,
+      "passes": true,
       "steps": [
         "Create backend/profiling/layer_profiler.py",
         "Implement LayerProfiler.__init__ with model reference",

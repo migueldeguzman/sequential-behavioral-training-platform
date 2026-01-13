@@ -145,3 +145,35 @@ Features: powermetrics integration, per-layer/per-token profiling, SQLite storag
 - Added convenience function detect_model_architecture(model)
 - Verified Python syntax with py_compile (no errors)
 
+### EP-010: LayerProfiler Class - Hook Registration - COMPLETED
+- Created backend/profiling/layer_profiler.py with comprehensive hook registration
+- Implemented ComponentTiming dataclass to store timing and activation statistics per component
+- Implemented LayerProfiler.__init__ with model reference and configuration options
+  - capture_activations parameter to enable/disable activation statistics
+  - sparsity_threshold parameter for configurable sparsity calculation
+- Integrated ModelArchitectureDetector to automatically detect component paths
+- Implemented register_hooks() method to register forward hooks on all model components
+  - Pre-hooks capture start time using time.perf_counter()
+  - Post-hooks capture end time and compute duration in milliseconds
+- Registered hooks on attention components (q_proj, k_proj, v_proj, o_proj)
+- Registered hooks on MLP components (gate_proj, up_proj, down_proj)
+  - Handles architectures without gate_proj (older Phi models)
+- Registered hooks on layer normalizations (input_layernorm, post_attention_layernorm)
+- Stores all hook handles for later removal in self.hook_handles list
+- Implemented activation statistics capture in post-hooks
+  - activation_mean: mean of absolute values
+  - activation_std: standard deviation
+  - activation_max: maximum absolute value
+  - activation_sparsity: fraction of near-zero values based on threshold
+  - Uses torch.mps.synchronize() on Apple Silicon for accurate timing
+  - Handles tuple outputs from modules that return multiple values
+- Implemented get_timings() to retrieve all captured timing data
+- Implemented reset() to clear timings between tokens or inference runs
+- Implemented detach() to remove all hooks from model
+- Added context manager support (__enter__, __exit__) for automatic cleanup
+- Added _get_layers() helper to access layers using detected path
+- Added _register_layer_hooks() to register hooks on all components within a layer
+- Added _register_component_hook() to register pre-hook and post-hook on specific component
+- Comprehensive error handling and logging throughout
+- Verified Python syntax with py_compile (no errors)
+
