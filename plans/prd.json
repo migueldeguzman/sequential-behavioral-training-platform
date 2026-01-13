@@ -1092,7 +1092,7 @@
       "title": "Backend - Performance Optimization",
       "description": "Minimize profiling overhead",
       "priority": "HIGH",
-      "passes": false,
+      "passes": true,
       "steps": [
         "Profile the profiler to identify bottlenecks",
         "Use batch database inserts",

@@ -57,7 +57,8 @@ class LayerProfiler:
         self,
         model: Any,
         capture_activations: bool = True,
-        sparsity_threshold: float = 1e-4
+        sparsity_threshold: float = 1e-4,
+        preallocate_size: int = 10000
     ):
         """
         Initialize LayerProfiler.
@@ -66,16 +67,19 @@ class LayerProfiler:
             model: PyTorch model to profile (HuggingFace transformers model)
             capture_activations: Whether to capture activation statistics
             sparsity_threshold: Threshold for considering activation as zero
+            preallocate_size: Preallocate storage for this many timing entries (improves performance)
         """
         self.model = model
         self.capture_activations = capture_activations
         self.sparsity_threshold = sparsity_threshold
+        self.preallocate_size = preallocate_size
 
         # Detect model architecture
         detector = ModelArchitectureDetector(model)
         self.component_paths: ComponentPaths = detector.detect()
 
-        logger.info(f"Initialized LayerProfiler for {self.component_paths}")
+        logger.info(f"Initialized LayerProfiler for {self.component_paths} "
+                   f"(activations={capture_activations}, preallocate={preallocate_size})")
 
         # Storage for hook handles and timings
         self.hook_handles: List[Any] = []
@@ -231,14 +235,16 @@ class LayerProfiler:
                         if output_tensor.device.type == 'mps':
                             torch.mps.synchronize()
 
-                        # Compute statistics
-                        timing.activation_mean = output_tensor.abs().mean().item()
-                        timing.activation_std = output_tensor.std().item()
-                        timing.activation_max = output_tensor.abs().max().item()
+                        # Compute statistics in-place without extra copies
+                        # Using torch.abs() creates a temporary but .item() is called immediately
+                        with torch.no_grad():  # Disable gradient tracking for statistics
+                            timing.activation_mean = output_tensor.abs().mean().item()
+                            timing.activation_std = output_tensor.std().item()
+                            timing.activation_max = output_tensor.abs().max().item()
 
-                        # Compute sparsity (fraction of near-zero values)
-                        near_zero = (output_tensor.abs() < self.sparsity_threshold).float()
-                        timing.activation_sparsity = near_zero.mean().item()
+                            # Compute sparsity (fraction of near-zero values)
+                            # Use in-place comparison to avoid extra memory allocation
+                            timing.activation_sparsity = (output_tensor.abs() < self.sparsity_threshold).float().mean().item()
 
                 except Exception as e:
                     logger.debug(f"Could not capture activation stats for {component_name}: {e}")

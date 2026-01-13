@@ -400,9 +400,41 @@ class ProfileDatabase:
             """,
             (run_id, phase, section_name, start_time_ms, end_time_ms, duration_ms, energy_mj, avg_power_mw),
         )
-        self.conn.commit()
+        # Defer commit for batch operations
         logger.debug(f"Added pipeline section {phase}/{section_name} for run {run_id}")
         return cursor.lastrowid
+
+    def add_pipeline_sections_batch(self, run_id: str, sections: list[dict]) -> None:
+        """Batch insert pipeline sections for a run.
+
+        Args:
+            run_id: Run identifier
+            sections: List of section dicts with keys:
+                phase, section_name, start_time_ms, end_time_ms, duration_ms, energy_mj, avg_power_mw
+        """
+        cursor = self.conn.cursor()
+        cursor.executemany(
+            """
+            INSERT INTO pipeline_sections (
+                run_id, phase, section_name, start_time_ms, end_time_ms,
+                duration_ms, energy_mj, avg_power_mw
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    run_id,
+                    s["phase"],
+                    s["section_name"],
+                    s["start_time_ms"],
+                    s["end_time_ms"],
+                    s["duration_ms"],
+                    s.get("energy_mj"),
+                    s.get("avg_power_mw"),
+                )
+                for s in sections
+            ],
+        )
+        logger.debug(f"Batch added {len(sections)} pipeline sections for run {run_id}")
 
     def add_token(
         self,
@@ -442,9 +474,46 @@ class ProfileDatabase:
             """,
             (run_id, token_index, token_text, phase, start_time_ms, end_time_ms, duration_ms, energy_mj, avg_power_mw),
         )
-        self.conn.commit()
+        # Defer commit for batch operations
         logger.debug(f"Added token {token_index} for run {run_id}")
         return cursor.lastrowid
+
+    def add_tokens_batch(self, run_id: str, tokens: list[dict]) -> list[int]:
+        """Batch insert tokens for a run.
+
+        Args:
+            run_id: Run identifier
+            tokens: List of token dicts with keys:
+                token_index, token_text, phase, start_time_ms, end_time_ms, duration_ms, energy_mj, avg_power_mw
+
+        Returns:
+            List of database row IDs for created tokens
+        """
+        cursor = self.conn.cursor()
+        token_ids = []
+        for token in tokens:
+            cursor.execute(
+                """
+                INSERT INTO tokens (
+                    run_id, token_index, token_text, phase, start_time_ms,
+                    end_time_ms, duration_ms, energy_mj, avg_power_mw
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    run_id,
+                    token["token_index"],
+                    token.get("token_text"),
+                    token["phase"],
+                    token["start_time_ms"],
+                    token["end_time_ms"],
+                    token["duration_ms"],
+                    token.get("energy_mj"),
+                    token.get("avg_power_mw"),
+                ),
+            )
+            token_ids.append(cursor.lastrowid)
+        logger.debug(f"Batch added {len(tokens)} tokens for run {run_id}")
+        return token_ids
 
     def add_layer_metrics(self, token_id: int, metrics: list[dict]) -> None:
         """Batch insert layer metrics for a token.
@@ -472,7 +541,7 @@ class ProfileDatabase:
                 for m in metrics
             ],
         )
-        self.conn.commit()
+        # Defer commit for batch operations
         logger.debug(f"Added {len(metrics)} layer metrics for token {token_id}")
 
     def add_component_metrics(self, layer_metric_id: int, metrics: list[dict]) -> None:
@@ -507,7 +576,7 @@ class ProfileDatabase:
                 for m in metrics
             ],
         )
-        self.conn.commit()
+        # Defer commit for batch operations
         logger.debug(f"Added {len(metrics)} component metrics for layer {layer_metric_id}")
 
     def add_deep_operation_metrics(self, component_metric_id: int, metrics: list[dict]) -> None:
@@ -545,8 +614,18 @@ class ProfileDatabase:
                 for m in metrics
             ],
         )
-        self.conn.commit()
+        # Defer commit for batch operations
         logger.debug(f"Added {len(metrics)} deep operation metrics for component {component_metric_id}")
+
+    def commit_transaction(self) -> None:
+        """Commit all pending database operations.
+
+        This should be called after batch operations to persist changes.
+        Calling this explicitly allows for better control over when disk writes occur.
+        """
+        if self.conn:
+            self.conn.commit()
+            logger.debug("Committed database transaction")
 
     def get_run(self, run_id: str) -> Optional[dict]:
         """Retrieve full run data by run_id.
