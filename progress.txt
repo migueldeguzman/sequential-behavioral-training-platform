@@ -709,3 +709,50 @@ Features: powermetrics integration, per-layer/per-token profiling, SQLite storag
 - Verified Python syntax with py_compile (no errors)
 - Updated PRD: EP-023 passes = true
 
+### EP-024: InferencePipelineProfiler - Post-Inference Phase - COMPLETED
+- Implemented post-inference phase profiling helper methods in InferencePipelineProfiler
+- Added profile_tensor_to_cpu() method (lines 902-927):
+  - Wraps tensor.to('cpu') with section timing
+  - Uses session.section("tensor_to_cpu", "post_inference") context manager
+  - Captures time to move output tensors from device memory (GPU/ANE/MPS) to CPU
+  - Returns CPU tensor for further processing
+  - Comprehensive docstring with usage example
+- Added profile_detokenization() method (lines 929-955):
+  - Wraps tokenizer.decode() with section timing
+  - Uses session.section("detokenization", "post_inference") context manager
+  - Captures time to decode token IDs back to text
+  - Uses skip_special_tokens=True for clean output
+  - Returns decoded text string
+  - Comprehensive docstring with usage example
+- Added profile_cleanup() method (lines 957-986):
+  - Wraps cleanup operations with section timing
+  - Uses session.section("cleanup", "post_inference") context manager
+  - Accepts arbitrary cleanup function with *args and **kwargs for flexibility
+  - Captures time for cache clearing, memory release, or garbage collection
+  - Returns result from cleanup function (if any)
+  - Comprehensive docstring with usage example
+- Added get_total_inference_energy() method (lines 988-1046):
+  - Calculates total inference energy from all profiled sections
+  - Aggregates energy consumption across all four phases:
+    * Pre-inference (tokenization, tensor transfer, KV-cache init)
+    * Prefill (prompt processing)
+    * Decode (token generation)
+    * Post-inference (detokenization, cleanup)
+  - Returns comprehensive dictionary with:
+    * total_energy_mj: Total energy consumption in millijoules
+    * pre_inference_energy_mj: Energy for pre-inference phase
+    * prefill_energy_mj: Energy for prefill phase
+    * decode_energy_mj: Energy for decode phase
+    * post_inference_energy_mj: Energy for post-inference phase
+    * total_duration_ms: Total duration in milliseconds
+    * avg_power_mw: Average power draw in milliwatts
+  - Accumulates energy per phase from all sections
+  - Handles missing energy values gracefully (None checks)
+  - Calculates average power across entire inference
+  - Comprehensive docstring with usage example
+- All post-inference methods leverage existing section() context manager for automatic energy correlation
+- Post-inference metrics automatically stored in session.sections list
+- Database integration already handled by existing _save_run_to_database() method
+- Verified Python syntax with py_compile (no errors)
+- Updated PRD: EP-024 passes = true
+

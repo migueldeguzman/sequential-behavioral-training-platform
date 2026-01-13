@@ -454,7 +454,7 @@
       "title": "InferencePipelineProfiler - Post-Inference Phase",
       "description": "Profile post-inference operations",
       "priority": "CRITICAL",
-      "passes": false,
+      "passes": true,
       "steps": [
         "Wrap tensor.to('cpu') with section timing",
         "Wrap tokenizer.decode() with section timing",

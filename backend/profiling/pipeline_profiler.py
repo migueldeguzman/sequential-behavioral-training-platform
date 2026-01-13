@@ -895,6 +895,156 @@ class InferencePipelineProfiler:
 
         return generated_ids
 
+    # =========================================================================
+    # Post-Inference Phase Profiling Methods
+    # =========================================================================
+
+    def profile_tensor_to_cpu(
+        self,
+        session: ProfilingSession,
+        tensor: Any
+    ) -> Any:
+        """
+        Profile tensor transfer to CPU with automatic section timing.
+
+        This captures the time to move output tensors from device memory
+        (GPU/ANE/MPS) back to CPU for further processing.
+
+        Args:
+            session: Active ProfilingSession from run() context manager
+            tensor: Output tensor to transfer to CPU
+
+        Returns:
+            Tensor on CPU
+
+        Example:
+            with profiler.run(prompt="Hello", model_name="llama-7b") as session:
+                # ... inference ...
+                output_cpu = profiler.profile_tensor_to_cpu(session, output_tensor)
+        """
+        with session.section("tensor_to_cpu", "post_inference"):
+            result = tensor.to('cpu')
+        return result
+
+    def profile_detokenization(
+        self,
+        session: ProfilingSession,
+        tokenizer: Any,
+        token_ids: Any
+    ) -> str:
+        """
+        Profile detokenization step with automatic section timing.
+
+        This captures the time to decode token IDs back to text.
+
+        Args:
+            session: Active ProfilingSession from run() context manager
+            tokenizer: Tokenizer instance
+            token_ids: Token IDs to decode
+
+        Returns:
+            Decoded text string
+
+        Example:
+            with profiler.run(prompt="Hello", model_name="llama-7b") as session:
+                # ... inference ...
+                text = profiler.profile_detokenization(session, tokenizer, generated_ids)
+        """
+        with session.section("detokenization", "post_inference"):
+            text = tokenizer.decode(token_ids, skip_special_tokens=True)
+        return text
+
+    def profile_cleanup(
+        self,
+        session: ProfilingSession,
+        cleanup_func: callable,
+        *args,
+        **kwargs
+    ) -> Any:
+        """
+        Profile memory cleanup operations with automatic section timing.
+
+        This captures the time for any cleanup operations like cache clearing,
+        memory release, or garbage collection.
+
+        Args:
+            session: Active ProfilingSession from run() context manager
+            cleanup_func: Function that performs cleanup operations
+            *args: Positional arguments for cleanup_func
+            **kwargs: Keyword arguments for cleanup_func
+
+        Returns:
+            Result from cleanup_func (if any)
+
+        Example:
+            with profiler.run(prompt="Hello", model_name="llama-7b") as session:
+                # ... inference ...
+                profiler.profile_cleanup(session, torch.cuda.empty_cache)
+        """
+        with session.section("cleanup", "post_inference"):
+            result = cleanup_func(*args, **kwargs) if cleanup_func else None
+        return result
+
+    def get_total_inference_energy(self, session: ProfilingSession) -> Dict[str, float]:
+        """
+        Calculate total inference energy from all profiled sections.
+
+        This aggregates energy consumption across all phases:
+        - Pre-inference (tokenization, tensor transfer, KV-cache init)
+        - Prefill (prompt processing)
+        - Decode (token generation)
+        - Post-inference (detokenization, cleanup)
+
+        Args:
+            session: Active ProfilingSession with collected section data
+
+        Returns:
+            Dictionary containing:
+                - total_energy_mj: Total energy consumption in millijoules
+                - pre_inference_energy_mj: Energy for pre-inference phase
+                - prefill_energy_mj: Energy for prefill phase
+                - decode_energy_mj: Energy for decode phase
+                - post_inference_energy_mj: Energy for post-inference phase
+                - total_duration_ms: Total duration in milliseconds
+                - avg_power_mw: Average power draw in milliwatts
+
+        Example:
+            with profiler.run(prompt="Hello", model_name="llama-7b") as session:
+                # ... complete inference pipeline ...
+                energy_stats = profiler.get_total_inference_energy(session)
+                print(f"Total energy: {energy_stats['total_energy_mj']:.2f} mJ")
+        """
+        # Initialize phase energy accumulators
+        phase_energy = {
+            "pre_inference": 0.0,
+            "prefill": 0.0,
+            "decode": 0.0,
+            "post_inference": 0.0
+        }
+
+        # Accumulate energy per phase from all sections
+        total_energy_mj = 0.0
+        total_duration_ms = 0.0
+
+        for section in session.sections:
+            if section.energy_mj is not None:
+                phase_energy[section.phase] += section.energy_mj
+                total_energy_mj += section.energy_mj
+            total_duration_ms += section.duration_ms
+
+        # Calculate average power
+        avg_power_mw = (total_energy_mj / total_duration_ms * 1000.0) if total_duration_ms > 0 else 0.0
+
+        return {
+            "total_energy_mj": total_energy_mj,
+            "pre_inference_energy_mj": phase_energy["pre_inference"],
+            "prefill_energy_mj": phase_energy["prefill"],
+            "decode_energy_mj": phase_energy["decode"],
+            "post_inference_energy_mj": phase_energy["post_inference"],
+            "total_duration_ms": total_duration_ms,
+            "avg_power_mw": avg_power_mw
+        }
+
 
 # Add section() method to ProfilingSession
 def _session_section(self, section_name: str, phase: str):
