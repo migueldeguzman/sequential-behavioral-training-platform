@@ -1002,7 +1002,7 @@
       "title": "Frontend - RunList Component",
       "description": "Create list of past profiling runs",
       "priority": "MEDIUM",
-      "passes": false,
+      "passes": true,
       "steps": [
         "Create src/components/profiling/RunList.tsx",
         "Fetch runs from API with pagination",

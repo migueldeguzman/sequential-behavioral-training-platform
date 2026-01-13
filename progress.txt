@@ -2419,3 +2419,60 @@ Performance impact:
 - Activation capture: ~50% faster with torch.no_grad()
 
 Updated PRD: EP-066 passes = true
+
+2026-01-14: EP-060 - Frontend - RunList Component
+Status: COMPLETED
+Description: Implemented comprehensive list component for browsing profiling run history
+
+Changes made:
+1. Created src/components/profiling/RunList.tsx component
+   - Full-featured list component for browsing historical profiling runs
+   - Displays run metadata: date, model, prompt preview, duration, energy, tokens
+   - Shows tags when present
+
+2. Search and filter functionality:
+   - Search by prompt text (client-side filtering)
+   - Filter by model name
+   - Filter by tags (comma-separated)
+   - Filter by date range (from/to dates)
+   - Clear filters button to reset all filters
+
+3. Pagination system:
+   - Page size: 20 runs per page
+   - Previous/Next navigation buttons
+   - Shows current page and total pages
+   - Shows range of items being displayed (e.g., "Showing 1-20 of 45")
+   - Proper disabled states for navigation buttons
+
+4. Sorting options:
+   - Sort by: Date, Duration, Energy, Efficiency
+   - Toggle between ascending/descending order
+   - Visual indicator for sort direction (↑/↓)
+
+5. API integration:
+   - Uses profilingApi.getProfilingRuns() with ProfilingRunsFilter
+   - Handles loading states with spinner
+   - Error handling with user-friendly error display
+   - Proper TypeScript typing throughout
+
+6. UI/UX features:
+   - Click on any run to select it (triggers onSelectRun callback)
+   - Visual highlighting of selected run
+   - Hover states for better interactivity
+   - Responsive grid layout for metrics
+   - Truncated prompt previews with "..." for long prompts
+   - Format helpers for dates, energy (mJ/J), duration (ms/s)
+   - Empty state when no runs found
+
+7. React best practices:
+   - useCallback for fetchRuns to avoid unnecessary re-renders
+   - useEffect with proper dependencies
+   - Proper TypeScript interfaces for props
+   - Client component ('use client' directive)
+
+8. TypeScript compilation:
+   - Build passes successfully: npm run build ✓
+   - No type errors
+   - Only minor ESLint warnings in other components (non-breaking)
+
+Updated PRD: EP-060 passes = true
