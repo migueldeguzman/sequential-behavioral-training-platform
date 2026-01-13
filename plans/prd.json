@@ -841,7 +841,7 @@
       "title": "Frontend - RealTimeView Container",
       "description": "Compose real-time view with all live components",
       "priority": "HIGH",
-      "passes": false,
+      "passes": true,
       "steps": [
         "Create src/components/profiling/RealTimeView.tsx",
         "Layout: Controls at top",

@@ -1871,3 +1871,66 @@ Component features:
 - TypeScript type safety throughout
 - Verified TypeScript compilation with npm run build (successful)
 - Updated PRD: EP-049 passes = true
+
+
+
+### EP-050: Frontend - RealTimeView Container - COMPLETED
+- Created src/components/profiling/RealTimeView.tsx as the main real-time profiling view container
+- Responsive grid layout with three main sections:
+  - Controls section at top (full width)
+  - Main content area using 3-column grid on xl screens
+  - Left column (3/4 width): Power timeline and layer heatmap charts
+  - Right column (1/4 width): Token generation stream sidebar with sticky positioning
+  - Footer: Current operation indicator with sticky bottom positioning
+- ProfilingControls component at top:
+  - Model selector, prompt input, profiling depth selector
+  - Advanced settings for experiment name, tags, temperature, max tokens
+  - Start/Stop profiling buttons with status indicator
+- PowerTimeSeriesChart main area:
+  - Displays real-time CPU, GPU, ANE, DRAM power consumption
+  - Auto-scrolling enabled for continuous monitoring
+  - Empty state with loading spinner when profiling starts
+  - Informative empty state when not profiling
+- LiveLayerHeatmap below power chart:
+  - Shows layer-by-layer activity heatmap updating with each token
+  - Displays energy metric by default
+  - Empty state with loading spinner during profiling
+  - Uses latest token for real-time updates
+- TokenGenerationStream sidebar:
+  - Sticky positioning to stay visible while scrolling
+  - Shows generated tokens as they stream in
+  - Empty state explaining token display
+  - Color-coded by energy consumption
+- CurrentOperationIndicator footer:
+  - Sticky bottom positioning (z-10) for always-visible status
+  - Shows current phase, section, and token information
+  - Animated phase transitions with timeline visualization
+- Information panel when not profiling:
+  - Blue-themed info box explaining the real-time view
+  - Lists all four main features with descriptions
+  - Call-to-action to start profiling
+- Performance stats panel during/after profiling:
+  - Four stat cards in responsive grid:
+    - Tokens Generated count
+    - Power Samples count
+    - Average Power (calculated from samples)
+    - Duration (from last sample timestamp)
+  - Updates in real-time as profiling progresses
+- Comprehensive empty states:
+  - Different messages for 'not started' vs 'waiting for data'
+  - Loading spinners with appropriate colors (blue, purple)
+  - Clear instructions for users
+- Responsive design:
+  - Mobile: Single column layout
+  - Desktop: Side-by-side layout with sidebar
+  - XL screens: Optimized 3:1 grid ratio for charts vs sidebar
+- Dark mode support:
+  - All components styled for both light and dark themes
+  - Proper contrast and readability in both modes
+- Integration with ProfilingContext:
+  - Uses isProfiling state to show loading/empty states
+  - Uses powerSamples array for chart data and stats
+  - Uses tokens array for heatmap and stream
+- TypeScript type safety throughout
+- Verified TypeScript compilation with npm run build (successful)
+- Updated PRD: EP-050 passes = true
