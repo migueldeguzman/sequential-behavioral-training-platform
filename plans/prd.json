@@ -714,7 +714,7 @@
       "title": "Frontend - Profiling WebSocket Manager",
       "description": "Create WebSocket manager for profiling stream",
       "priority": "HIGH",
-      "passes": false,
+      "passes": true,
       "steps": [
         "Create src/lib/profilingWebsocket.ts",
         "Implement connection management",

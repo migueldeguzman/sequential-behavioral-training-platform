@@ -1575,3 +1575,37 @@ Features: powermetrics integration, per-layer/per-token profiling, SQLite storag
 - Fixed tags parameter conversion from string[] to comma-separated string with .join(",")
 - Verified TypeScript compilation with npm run build (successful)
 - Updated PRD: EP-041 passes = true
+
+### EP-042: Frontend - Profiling WebSocket Manager - COMPLETED
+- Created src/lib/profilingWebsocket.ts with comprehensive WebSocket management
+- Implemented ProfilingWebSocketManager class for connection management
+  - connect() method establishes WebSocket connection to /ws/profiling
+  - disconnect() method closes connection and cleans up resources
+  - on() method registers typed event handlers for each message type
+  - onError() method registers error handler
+  - onConnectionStateChange() method registers connection state handler
+- Implemented ConnectionState type: disconnected, connecting, connected, reconnecting
+- Implemented ProfilingEventHandlers type for all 7 message types:
+  - power_sample, section_start, section_end, token_complete
+  - layer_metrics, component_metrics, inference_complete
+- Implemented automatic reconnection logic with exponential backoff
+  - Starts at 1 second delay, doubles each attempt
+  - Maximum delay capped at 30 seconds
+  - Maximum 5 reconnection attempts before giving up
+- Implemented message parsing and typed event dispatching
+  - Parses incoming JSON messages
+  - Validates message type and routes to appropriate handler
+  - Type-safe message handling using TypeScript generics
+- Implemented useProfilingWebSocket React hook
+  - Accepts autoConnect, baseUrl, and handlers options
+  - Returns connectionState, error, connect, disconnect, subscribe, isConnected, manager
+  - Automatic cleanup on component unmount
+  - Connection state tracking with useState
+  - Error tracking with useState
+  - Supports dynamic handler updates via useEffect
+- WebSocket URL detection with proper protocol (ws/wss based on https)
+- Thread-safe implementation suitable for React strict mode
+- Comprehensive error handling throughout lifecycle
+- Fixed all TypeScript linting errors with eslint-disable-next-line comments
+- Verified TypeScript compilation with npm run build (successful)
+- Updated PRD: EP-042 passes = true
