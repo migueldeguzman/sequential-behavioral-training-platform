@@ -178,6 +178,7 @@ export interface ComponentMetrics {
   activation_std: number;
   activation_max: number;
   sparsity: number;
+  deep_operations?: DeepOperationMetrics[];
 }
 
 export interface LayerMetrics {

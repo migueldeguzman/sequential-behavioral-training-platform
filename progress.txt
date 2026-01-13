@@ -2260,3 +2260,111 @@ Created src/components/profiling/DeepDrilldown.tsx - a modal component for displ
 - Clean integration with existing profiling types
 
 Updated PRD: EP-058 passes = true
+
+
+---
+
+## 2026-01-14 - EP-059: Frontend - AnalysisView Container (COMPLETE)
+
+Successfully implemented the comprehensive AnalysisView container component that composes all post-inference analysis components into a cohesive interface.
+
+### Components Implemented
+
+1. **AnalysisView.tsx** - Main container component with:
+   - Full state management for metric selection, token navigation, and visualization modes
+   - Responsive layout with multiple sections
+   - Integration of all child components
+
+### Layout Structure
+
+1. **Metric Selector Section**
+   - Positioned at top of view
+   - Allows switching between time, activation stats, sparsity, and deep profiling metrics
+   - Integrated with MetricSelector component
+
+2. **Pipeline Timeline Overview**
+   - Shows high-level pipeline phase breakdown
+   - Visual representation of pre-inference, prefill, decode, and post-inference phases
+   - Integrated with PipelineTimeline component
+
+3. **Token Slider Navigation**
+   - Interactive slider for navigating through generated tokens
+   - Shows current token position and metrics
+   - Play/pause animation support
+   - Integrated with TokenSlider component
+
+4. **Main Visualization Area with Tabs**
+   - Three visualization modes: Heatmap, Treemap, Sankey
+   - **Heatmap Tab**: Layer × Component grid showing selected metric
+     - Dynamic color scale based on metric type
+     - Click to drill down into deep operations
+   - **Treemap Tab**: Hierarchical view of layer and component breakdown
+     - Shows relative sizes based on duration
+   - **Sankey Tab**: Energy flow diagram through model layers
+     - Visualizes data flow from input through layers to output
+
+5. **Deep Drilldown Modal Integration**
+   - Opens when clicking on heatmap cells
+   - Shows detailed deep operation metrics for selected component
+   - Proper state management for component and layer selection
+
+### Data Processing
+
+1. **Heatmap Data Extraction**
+   - Transforms layer metrics into 2D grid format
+   - Supports multiple metric types (time, activation stats, sparsity, attention entropy)
+   - Proper handling of missing components
+
+2. **Treemap Data Structure**
+   - Hierarchical data with model > layers > components
+   - Color coding for attention vs MLP components
+   - Values based on component duration
+
+3. **Sankey Data Generation**
+   - Node structure with proper IDs and categories
+   - Link structure showing flow between layers
+   - String-based node references (required by d3-sankey)
+
+### State Management
+
+- selectedMetric: MetricType for current metric selection
+- selectedTokenIndex: Current token being analyzed
+- selectedVisualization: Active visualization tab (heatmap/treemap/sankey)
+- selectedComponent: Component selected for deep drilldown
+- selectedLayerIndex: Layer index for drilldown context
+
+### Type System Integration
+
+- Extended ComponentMetrics interface to include optional deep_operations field
+- Proper use of MetricType from MetricSelector
+- Correct prop types for all child components
+
+### Technical Implementation
+
+- React functional component with hooks (useState, useMemo)
+- Memoized data transformations for performance
+- Proper TypeScript typing throughout
+- Integration with existing type definitions
+- Responsive Tailwind CSS layout
+
+### Build Verification
+
+- TypeScript compilation successful: npm run build passes
+- No type errors or critical warnings
+- Only minor ESLint warnings about useMemo dependencies (non-breaking)
+- All component imports resolved correctly
+
+### Updated Files
+
+1. src/components/profiling/AnalysisView.tsx - New file created
+2. src/types/index.ts - Extended ComponentMetrics interface with deep_operations field
+3. plans/prd.json - Updated EP-059 passes to true
+
+### Integration Points
+
+- Receives ProfilingRun data as prop
+- Works with all existing chart components
+- Properly handles optional data (pipeline_sections, tokens, deep_operations)
+- Graceful degradation when data is missing
+
+Updated PRD: EP-059 passes = true

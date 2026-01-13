@@ -985,7 +985,7 @@
       "title": "Frontend - AnalysisView Container",
       "description": "Compose analysis view with all post-inference components",
       "priority": "HIGH",
-      "passes": false,
+      "passes": true,
       "steps": [
         "Create src/components/profiling/AnalysisView.tsx",
         "Layout: MetricSelector at top",
