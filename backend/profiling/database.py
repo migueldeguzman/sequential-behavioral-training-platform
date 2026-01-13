@@ -790,6 +790,27 @@ class ProfileDatabase:
 
         return deleted
 
+    def get_pipeline_sections(self, run_id: str) -> list[dict]:
+        """Get all pipeline sections for a run, grouped by phase.
+
+        Args:
+            run_id: Run identifier
+
+        Returns:
+            List of pipeline section dictionaries ordered by start time
+        """
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            SELECT * FROM pipeline_sections
+            WHERE run_id = ?
+            ORDER BY start_time_ms
+            """,
+            (run_id,)
+        )
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+
 
 def init_database(db_path: str = "backend/profiling.db") -> ProfileDatabase:
     """Initialize and return a connected ProfileDatabase instance.

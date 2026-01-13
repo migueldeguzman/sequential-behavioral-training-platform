@@ -561,7 +561,7 @@
       "title": "Profiling Pipeline Breakdown Endpoint",
       "description": "Create endpoint for pipeline section analysis",
       "priority": "HIGH",
-      "passes": false,
+      "passes": true,
       "steps": [
         "Implement GET /api/profiling/run/{id}/pipeline endpoint",
         "Return hierarchical phase > section breakdown",

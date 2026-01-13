@@ -1992,6 +1992,103 @@ async def get_profiling_run_summary(run_id: str):
         raise HTTPException(status_code=500, detail=f"Failed to retrieve profiling run summary: {str(e)}")
 
 
+@app.get("/api/profiling/run/{run_id}/pipeline")
+async def get_profiling_pipeline_breakdown(run_id: str):
+    """
+    Get hierarchical pipeline section breakdown for a profiling run.
+
+    This endpoint returns detailed phase > section breakdown with timing and energy data.
+    Sections are organized hierarchically by phase (pre_inference, prefill, decode, post_inference).
+
+    Each section includes:
+    - Timing (duration_ms, start_time_ms, end_time_ms)
+    - Energy (energy_mj)
+    - Power (avg_power_mw)
+    - Percentage of total duration and energy
+
+    Args:
+        run_id: Unique identifier for the profiling run
+
+    Returns:
+        Hierarchical breakdown with phases and sections
+    """
+    from profiling.database import ProfileDatabase
+
+    try:
+        database = ProfileDatabase()
+        database.connect()
+
+        # Get all pipeline sections
+        sections = database.get_pipeline_sections(run_id)
+
+        database.close()
+
+        if not sections:
+            raise HTTPException(status_code=404, detail=f"No pipeline data found for run {run_id}")
+
+        # Calculate totals for percentage calculations
+        total_duration_ms = sum(s.get("duration_ms", 0) or 0 for s in sections)
+        total_energy_mj = sum(s.get("energy_mj", 0) or 0 for s in sections)
+
+        # Group sections by phase
+        phases = {}
+        for section in sections:
+            phase = section["phase"]
+            if phase not in phases:
+                phases[phase] = {
+                    "phase": phase,
+                    "sections": [],
+                    "total_duration_ms": 0,
+                    "total_energy_mj": 0,
+                    "total_avg_power_mw": 0,
+                    "section_count": 0,
+                }
+
+            # Calculate percentages for this section
+            duration_pct = (section.get("duration_ms", 0) / total_duration_ms * 100) if total_duration_ms > 0 else 0
+            energy_pct = (section.get("energy_mj", 0) / total_energy_mj * 100) if total_energy_mj > 0 else 0
+
+            # Add section with percentages
+            section_with_pct = {
+                **section,
+                "duration_percentage": round(duration_pct, 2),
+                "energy_percentage": round(energy_pct, 2),
+            }
+            phases[phase]["sections"].append(section_with_pct)
+
+            # Accumulate phase totals
+            phases[phase]["total_duration_ms"] += section.get("duration_ms", 0) or 0
+            phases[phase]["total_energy_mj"] += section.get("energy_mj", 0) or 0
+            phases[phase]["section_count"] += 1
+
+        # Calculate phase percentages and averages
+        for phase_data in phases.values():
+            phase_data["duration_percentage"] = round(
+                (phase_data["total_duration_ms"] / total_duration_ms * 100) if total_duration_ms > 0 else 0,
+                2
+            )
+            phase_data["energy_percentage"] = round(
+                (phase_data["total_energy_mj"] / total_energy_mj * 100) if total_energy_mj > 0 else 0,
+                2
+            )
+            if phase_data["total_duration_ms"] > 0:
+                phase_data["avg_power_mw"] = (phase_data["total_energy_mj"] / phase_data["total_duration_ms"]) * 1000
+
+        # Return structured response
+        return {
+            "run_id": run_id,
+            "total_duration_ms": total_duration_ms,
+            "total_energy_mj": total_energy_mj,
+            "phases": list(phases.values()),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to retrieve pipeline breakdown for run {run_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve pipeline breakdown: {str(e)}")
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

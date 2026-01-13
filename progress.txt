@@ -1052,3 +1052,47 @@ Features: powermetrics integration, per-layer/per-token profiling, SQLite storag
 - Verified Python syntax with py_compile (no errors)
 - Updated PRD: EP-030 passes = true
 
+### EP-031: Profiling Pipeline Breakdown Endpoint - COMPLETED
+- Implemented GET /api/profiling/run/{run_id}/pipeline endpoint in backend/main.py (lines 1995-2085)
+  - Retrieves hierarchical pipeline section breakdown for a profiling run
+  - Returns detailed phase > section structure with timing and energy data
+  - Added get_pipeline_sections(run_id) method to ProfileDatabase class (database.py:793-809)
+    * Queries pipeline_sections table ordered by start_time_ms
+    * Returns list of section dictionaries with all fields
+  - Calculates comprehensive metrics per section:
+    * Duration percentage: (section_duration / total_duration) × 100
+    * Energy percentage: (section_energy / total_energy) × 100
+  - Groups sections hierarchically by phase (pre_inference, prefill, decode, post_inference)
+  - Each phase includes:
+    * phase: Phase identifier
+    * sections: Array of sections within phase
+    * total_duration_ms: Sum of all section durations in phase
+    * total_energy_mj: Sum of all section energies in phase
+    * avg_power_mw: Average power draw for phase
+    * section_count: Number of sections in phase
+    * duration_percentage: Phase percentage of total duration
+    * energy_percentage: Phase percentage of total energy
+  - Each section includes:
+    * All fields from pipeline_sections table (id, phase, section_name, start/end times, duration, energy, avg_power)
+    * duration_percentage: Section percentage of total duration
+    * energy_percentage: Section percentage of total energy
+  - Returns structured response:
+    * run_id: Run identifier
+    * total_duration_ms: Total duration across all sections
+    * total_energy_mj: Total energy across all sections
+    * phases: List of phase dictionaries with nested sections
+  - Comprehensive error handling:
+    * HTTPException for 404 when no pipeline data found
+    * HTTPException with 500 status for database errors
+    * Re-raises HTTPException to preserve error codes
+    * Logs all errors with detailed messages
+  - Proper resource management:
+    * Closes database connection after query completion
+    * try/except blocks protect against partial data retrieval
+  - Enables detailed pipeline analysis:
+    * Identify bottleneck phases and sections
+    * Compare time vs energy consumption per section
+    * Analyze percentage contribution of each operation
+- Verified Python syntax with py_compile (no errors)
+- Updated PRD: EP-031 passes = true
+
