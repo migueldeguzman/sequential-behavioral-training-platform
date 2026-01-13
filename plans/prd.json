@@ -130,7 +130,7 @@
       "title": "PowerMonitor Class - Basic Implementation",
       "description": "Create PowerMonitor class to spawn and manage powermetrics subprocess",
       "priority": "CRITICAL",
-      "passes": false,
+      "passes": true,
       "steps": [
         "Create backend/profiling/power_monitor.py",
         "Implement PowerMonitor.__init__ with configurable sample interval",

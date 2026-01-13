@@ -26,3 +26,14 @@ Features: powermetrics integration, per-layer/per-token profiling, SQLite storag
 - Added /api/profiling/powermetrics/status endpoint
 - Verified Python syntax with py_compile
 
+### EP-003: PowerMonitor Class - Basic Implementation - COMPLETED
+- Created backend/profiling/power_monitor.py
+- Implemented PowerMonitor.__init__ with configurable sample_interval_ms parameter
+- Implemented PowerMonitor.start() to spawn powermetrics subprocess with plist output
+- Implemented PowerMonitor.stop() to terminate subprocess and finalize collection
+- Implemented PowerMonitor.is_available() class method for permission checking
+- Added PowerSample dataclass for structured power measurements
+- Added context manager support (__enter__, __exit__)
+- Added is_running(), get_samples(), and get_current() methods
+- Verified Python syntax with py_compile (no errors)
+
