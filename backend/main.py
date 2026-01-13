@@ -1662,13 +1662,32 @@ async def profiled_generate(request: ProfiledGenerateRequest):
             except Exception as e:
                 logger.error(f"Failed to stream power sample: {e}")
 
-        # Create pipeline profiler with streaming callback
+        # Define section event callback for WebSocket streaming
+        def stream_section_event(event_type, phase, section_name, timestamp, data):
+            """Callback to stream section start/end events via WebSocket"""
+            try:
+                message = {
+                    "type": ProfilingMessageType.SECTION_START if event_type == "section_start" else ProfilingMessageType.SECTION_END,
+                    "timestamp": timestamp,
+                    "data": {
+                        "phase": phase,
+                        "section_name": section_name,
+                        **data
+                    }
+                }
+                # Broadcast to all connected WebSocket clients
+                asyncio.create_task(profiling_manager.broadcast(message))
+            except Exception as e:
+                logger.error(f"Failed to stream section event: {e}")
+
+        # Create pipeline profiler with streaming callbacks
         profiler = InferencePipelineProfiler(
             power_monitor=power_monitor,
             layer_profiler=layer_profiler,
             deep_profiler=deep_profiler,
             database=database,
-            power_sample_callback=stream_power_sample
+            power_sample_callback=stream_power_sample,
+            section_event_callback=stream_section_event
         )
 
         # Start profiling session

@@ -1271,3 +1271,41 @@ Features: powermetrics integration, per-layer/per-token profiling, SQLite storag
 - Verified Python syntax with py_compile for both files (no errors)
 - Updated PRD: EP-035 passes = true
 
+### EP-036: WebSocket Profiling - Section Events - COMPLETED
+- Enhanced InferencePipelineProfiler to support real-time section event streaming
+- Added SectionEventCallback type definition to pipeline_profiler.py (line 52)
+  - Callback signature: callback(event_type: str, phase: str, section_name: str, timestamp: float, data: dict)
+- Added section_event_callback parameter to InferencePipelineProfiler.__init__ (line 105)
+  - Optional callback function for streaming section start/end events
+- Added section_event_callback field to ProfilingSession dataclass (line 90)
+  - Stores callback reference for access from session.section() context manager
+- Enhanced _session_section() context manager to emit section events (lines 1576-1679)
+  - Emits section_start event at beginning of section (lines 1576-1589)
+    * Includes event_type="section_start", phase, section_name, timestamp
+    * Includes data with relative_time_ms (milliseconds since inference start)
+  - Emits section_end event at end of section (lines 1663-1679)
+    * Includes event_type="section_end", phase, section_name, timestamp
+    * Includes data with relative_time_ms, duration_ms, energy_mj, avg_power_mw
+  - Comprehensive error handling prevents callback failures from affecting profiling
+- Integrated WebSocket streaming with /api/profiling/generate endpoint (main.py:1665-1681)
+  - Defined stream_section_event() callback function
+  - Creates SECTION_START or SECTION_END message based on event_type
+  - Message includes:
+    * type: ProfilingMessageType.SECTION_START or SECTION_END
+    * timestamp: Absolute timestamp of event
+    * data: phase, section_name, and additional metrics (duration, energy for end events)
+  - Broadcasts messages to all connected WebSocket clients via profiling_manager
+  - Uses asyncio.create_task() for non-blocking async broadcast
+  - Comprehensive error handling for streaming failures
+- Section events streamed in real-time during inference:
+  - section_start emitted when entering any profiled section
+  - section_end emitted when exiting any profiled section
+  - Provides real-time progress tracking during profiling
+- All EP-036 requirements fulfilled:
+  ✓ Created section_start message type (ProfilingMessageType.SECTION_START)
+  ✓ Created section_end message type (ProfilingMessageType.SECTION_END)
+  ✓ Included phase, section name, timestamp in both events
+  ✓ Included duration and energy on section_end events
+- Verified Python syntax with py_compile for both files (no errors)
+- Updated PRD: EP-036 passes = true
+

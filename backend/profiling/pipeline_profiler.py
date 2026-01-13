@@ -47,8 +47,9 @@ from .database import ProfileDatabase
 logger = logging.getLogger(__name__)
 
 
-# WebSocket callback type for streaming profiling events
+# WebSocket callback types for streaming profiling events
 PowerSampleCallback = Optional[callable]  # Callback signature: callback(sample: PowerSample)
+SectionEventCallback = Optional[callable]  # Callback signature: callback(event_type: str, phase: str, section_name: str, timestamp: float, data: dict)
 
 
 @dataclass
@@ -85,6 +86,9 @@ class ProfilingSession:
     deep_profiler: Optional[DeepAttentionProfiler] = None
     database: Optional[ProfileDatabase] = None
 
+    # WebSocket streaming callbacks
+    section_event_callback: SectionEventCallback = None
+
 
 class InferencePipelineProfiler:
     """
@@ -100,7 +104,8 @@ class InferencePipelineProfiler:
         layer_profiler: Optional[LayerProfiler] = None,
         deep_profiler: Optional[DeepAttentionProfiler] = None,
         database: Optional[ProfileDatabase] = None,
-        power_sample_callback: PowerSampleCallback = None
+        power_sample_callback: PowerSampleCallback = None,
+        section_event_callback: SectionEventCallback = None
     ):
         """
         Initialize the inference pipeline profiler.
@@ -111,12 +116,14 @@ class InferencePipelineProfiler:
             deep_profiler: DeepAttentionProfiler instance for operation-level metrics (optional)
             database: ProfileDatabase instance for storing profiling data
             power_sample_callback: Optional callback for streaming power samples (for WebSocket)
+            section_event_callback: Optional callback for streaming section events (for WebSocket)
         """
         self.power_monitor = power_monitor
         self.layer_profiler = layer_profiler
         self.deep_profiler = deep_profiler
         self.database = database
         self.power_sample_callback = power_sample_callback
+        self.section_event_callback = section_event_callback
 
         # Current active session
         self._current_session: Optional[ProfilingSession] = None
@@ -222,7 +229,8 @@ class InferencePipelineProfiler:
             power_monitor=self.power_monitor,
             layer_profiler=self.layer_profiler,
             deep_profiler=self.deep_profiler,
-            database=self.database
+            database=self.database,
+            section_event_callback=self.section_event_callback
         )
 
         # Store as current session
@@ -1565,6 +1573,21 @@ def _session_section(self, section_name: str, phase: str):
 
         logger.debug(f"Starting section {phase}/{section_name}")
 
+        # Emit section_start event via callback
+        if self.section_event_callback:
+            try:
+                self.section_event_callback(
+                    event_type="section_start",
+                    phase=phase,
+                    section_name=section_name,
+                    timestamp=start_time,
+                    data={
+                        "relative_time_ms": start_relative_ms
+                    }
+                )
+            except Exception as e:
+                logger.error(f"Error in section_start callback: {e}")
+
         # Synchronize if using MPS (Apple Silicon)
         try:
             import torch
@@ -1636,6 +1659,24 @@ def _session_section(self, section_name: str, phase: str):
             self.sections.append(section_timing)
 
             logger.debug(f"Completed section {phase}/{section_name}: {duration_ms:.2f}ms, {energy_mj:.2f}mJ" if energy_mj else f"Completed section {phase}/{section_name}: {duration_ms:.2f}ms")
+
+            # Emit section_end event via callback
+            if self.section_event_callback:
+                try:
+                    self.section_event_callback(
+                        event_type="section_end",
+                        phase=phase,
+                        section_name=section_name,
+                        timestamp=end_time,
+                        data={
+                            "relative_time_ms": end_relative_ms,
+                            "duration_ms": duration_ms,
+                            "energy_mj": energy_mj,
+                            "avg_power_mw": avg_power_mw
+                        }
+                    )
+                except Exception as e:
+                    logger.error(f"Error in section_end callback: {e}")
 
     return section_context()
 

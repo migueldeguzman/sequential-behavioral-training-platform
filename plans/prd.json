@@ -627,7 +627,7 @@
       "title": "WebSocket Profiling - Section Events",
       "description": "Stream section start/end events",
       "priority": "HIGH",
-      "passes": false,
+      "passes": true,
       "steps": [
         "Create section_start message type",
         "Create section_end message type",
