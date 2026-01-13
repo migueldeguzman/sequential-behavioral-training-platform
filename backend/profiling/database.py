@@ -105,6 +105,12 @@ class ProfileDatabase:
                 energy_per_input_token_mj REAL,
                 energy_per_output_token_mj REAL,
                 input_output_energy_ratio REAL,
+                peak_power_mw REAL,
+                peak_power_cpu_mw REAL,
+                peak_power_gpu_mw REAL,
+                peak_power_ane_mw REAL,
+                peak_power_dram_mw REAL,
+                peak_power_timestamp_ms REAL,
                 status TEXT DEFAULT 'running',
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
@@ -332,6 +338,12 @@ class ProfileDatabase:
         energy_per_input_token_mj: Optional[float] = None,
         energy_per_output_token_mj: Optional[float] = None,
         input_output_energy_ratio: Optional[float] = None,
+        peak_power_mw: Optional[float] = None,
+        peak_power_cpu_mw: Optional[float] = None,
+        peak_power_gpu_mw: Optional[float] = None,
+        peak_power_ane_mw: Optional[float] = None,
+        peak_power_dram_mw: Optional[float] = None,
+        peak_power_timestamp_ms: Optional[float] = None,
         status: str = "completed",
     ) -> None:
         """Update run with final metrics.
@@ -349,6 +361,12 @@ class ProfileDatabase:
             energy_per_input_token_mj: Average energy per input token
             energy_per_output_token_mj: Average energy per output token
             input_output_energy_ratio: Ratio of output to input token energy
+            peak_power_mw: Peak total power during run
+            peak_power_cpu_mw: Peak CPU power during run
+            peak_power_gpu_mw: Peak GPU power during run
+            peak_power_ane_mw: Peak ANE power during run
+            peak_power_dram_mw: Peak DRAM power during run
+            peak_power_timestamp_ms: Time when peak power occurred (relative to start)
             status: Run status (default: 'completed')
         """
         cursor = self.conn.cursor()
@@ -390,6 +408,24 @@ class ProfileDatabase:
         if input_output_energy_ratio is not None:
             updates.append("input_output_energy_ratio = ?")
             values.append(input_output_energy_ratio)
+        if peak_power_mw is not None:
+            updates.append("peak_power_mw = ?")
+            values.append(peak_power_mw)
+        if peak_power_cpu_mw is not None:
+            updates.append("peak_power_cpu_mw = ?")
+            values.append(peak_power_cpu_mw)
+        if peak_power_gpu_mw is not None:
+            updates.append("peak_power_gpu_mw = ?")
+            values.append(peak_power_gpu_mw)
+        if peak_power_ane_mw is not None:
+            updates.append("peak_power_ane_mw = ?")
+            values.append(peak_power_ane_mw)
+        if peak_power_dram_mw is not None:
+            updates.append("peak_power_dram_mw = ?")
+            values.append(peak_power_dram_mw)
+        if peak_power_timestamp_ms is not None:
+            updates.append("peak_power_timestamp_ms = ?")
+            values.append(peak_power_timestamp_ms)
 
         updates.append("status = ?")
         values.append(status)

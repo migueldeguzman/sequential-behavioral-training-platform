@@ -1396,7 +1396,7 @@
       "title": "Peak Power Tracking",
       "description": "Track and display peak power draw during inference, not just averages",
       "priority": "HIGH",
-      "passes": false,
+      "passes": true,
       "reference": "TokenPowerBench: Reports peak power alongside averages for capacity planning",
       "steps": [
         "Add peak_power_mw field to profiling_runs table",

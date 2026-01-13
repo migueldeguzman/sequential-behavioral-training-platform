@@ -13,7 +13,7 @@ import plistlib
 import threading
 import os
 from typing import Optional, List, Dict, Any
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 import io
 
@@ -71,6 +71,14 @@ class PowerMonitor:
         self._plist_buffer = ""
         self._current_phase: str = 'idle'  # Current inference phase
 
+        # Peak power tracking
+        self._peak_total_power_mw: float = 0.0
+        self._peak_cpu_power_mw: float = 0.0
+        self._peak_gpu_power_mw: float = 0.0
+        self._peak_ane_power_mw: float = 0.0
+        self._peak_dram_power_mw: float = 0.0
+        self._peak_timestamp_ms: float = 0.0
+
     def _parse_plist_sample(self, plist_data: Dict[str, Any]) -> Optional[PowerSample]:
         """
         Parse a single power sample from powermetrics plist output.
@@ -117,6 +125,15 @@ class PowerMonitor:
 
             # Calculate total power
             total_power_mw = cpu_power_mw + gpu_power_mw + ane_power_mw + dram_power_mw
+
+            # Track peak power values
+            if total_power_mw > self._peak_total_power_mw:
+                self._peak_total_power_mw = total_power_mw
+                self._peak_cpu_power_mw = cpu_power_mw
+                self._peak_gpu_power_mw = gpu_power_mw
+                self._peak_ane_power_mw = ane_power_mw
+                self._peak_dram_power_mw = dram_power_mw
+                self._peak_timestamp_ms = relative_time_ms
 
             return PowerSample(
                 timestamp=timestamp,
@@ -249,6 +266,14 @@ class PowerMonitor:
         self._samples = []
         self._plist_buffer = ""
 
+        # Reset peak power tracking
+        self._peak_total_power_mw = 0.0
+        self._peak_cpu_power_mw = 0.0
+        self._peak_gpu_power_mw = 0.0
+        self._peak_ane_power_mw = 0.0
+        self._peak_dram_power_mw = 0.0
+        self._peak_timestamp_ms = 0.0
+
         # Start background sampling thread
         self._sampling_thread = threading.Thread(target=self._sampling_loop, daemon=True)
         self._sampling_thread.start()
@@ -330,6 +355,29 @@ class PowerMonitor:
             Current phase name
         """
         return self._current_phase
+
+    def get_peak_power(self) -> Dict[str, float]:
+        """
+        Get peak power values recorded during sampling.
+
+        Returns:
+            Dictionary with peak power values for each component:
+                - peak_power_mw: Peak total power
+                - peak_power_cpu_mw: Peak CPU power
+                - peak_power_gpu_mw: Peak GPU power
+                - peak_power_ane_mw: Peak ANE power
+                - peak_power_dram_mw: Peak DRAM power
+                - peak_power_timestamp_ms: Time when peak occurred (relative to start)
+        """
+        with self._samples_lock:
+            return {
+                'peak_power_mw': self._peak_total_power_mw,
+                'peak_power_cpu_mw': self._peak_cpu_power_mw,
+                'peak_power_gpu_mw': self._peak_gpu_power_mw,
+                'peak_power_ane_mw': self._peak_ane_power_mw,
+                'peak_power_dram_mw': self._peak_dram_power_mw,
+                'peak_power_timestamp_ms': self._peak_timestamp_ms
+            }
 
     def __enter__(self):
         """Context manager entry"""

@@ -2667,3 +2667,17 @@ Testing:
 - Fixed react/no-unescaped-entities errors
 
 Updated PRD: EP-076 passes = true
+
+### EP-085: Peak Power Tracking - COMPLETED
+- Added peak_power_mw, peak_power_cpu_mw, peak_power_gpu_mw, peak_power_ane_mw, peak_power_dram_mw fields to profiling_runs table
+- Added peak_power_timestamp_ms field to record when peak power occurred
+- Updated PowerMonitor class to track peak power values across all components during sampling
+- Peak values are updated in real-time as samples are collected in _parse_plist_sample method
+- Added get_peak_power() method to PowerMonitor for retrieving peak power data
+- Peak values are reset at the start of each monitoring session in start() method
+- Updated ProfileDatabase.update_run_metrics() to accept peak power parameters
+- Added peak power fields to database UPDATE statement with proper parameter binding
+- Peak power fields are automatically included in API responses via get_run_summary()
+- Verified Python syntax with py_compile (no errors)
+- Verified TypeScript compilation with npm build (successful)
+
