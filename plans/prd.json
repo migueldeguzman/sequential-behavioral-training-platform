@@ -260,7 +260,7 @@
       "title": "LayerProfiler Class - Timing Capture",
       "description": "Capture accurate timing for each hooked component",
       "priority": "CRITICAL",
-      "passes": false,
+      "passes": true,
       "steps": [
         "Implement pre-hook to record start time",
         "Implement post-hook to record end time",

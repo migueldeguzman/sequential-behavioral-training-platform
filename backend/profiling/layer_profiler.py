@@ -21,6 +21,7 @@ Usage:
 
 import time
 import logging
+import threading
 from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 
@@ -78,7 +79,12 @@ class LayerProfiler:
 
         # Storage for hook handles and timings
         self.hook_handles: List[Any] = []
-        self.timings: List[ComponentTiming] = []
+
+        # Thread-local storage for timings to ensure concurrent safety
+        self._local = threading.local()
+
+        # Lock for thread-safe access to timings
+        self._timings_lock = threading.Lock()
 
         # Flag to track if hooks are registered
         self._hooks_registered = False
@@ -107,6 +113,17 @@ class LayerProfiler:
 
         self._hooks_registered = True
         logger.info(f"Registered {len(self.hook_handles)} hooks total")
+
+    def _get_thread_timings(self) -> List[ComponentTiming]:
+        """
+        Get or create thread-local timings list.
+
+        Returns:
+            Thread-local list of ComponentTiming objects
+        """
+        if not hasattr(self._local, 'timings'):
+            self._local.timings = []
+        return self._local.timings
 
     def _get_layers(self) -> Optional[Any]:
         """Get layers from model using detected path."""
@@ -226,8 +243,9 @@ class LayerProfiler:
                 except Exception as e:
                     logger.debug(f"Could not capture activation stats for {component_name}: {e}")
 
-            # Store timing
-            self.timings.append(timing)
+            # Store timing in thread-local storage
+            timings = self._get_thread_timings()
+            timings.append(timing)
 
         # Register both hooks
         pre_handle = component.register_forward_pre_hook(pre_hook)
@@ -239,20 +257,23 @@ class LayerProfiler:
 
     def get_timings(self) -> List[ComponentTiming]:
         """
-        Get all captured timings.
+        Get all captured timings from the current thread.
 
         Returns:
             List of ComponentTiming objects
         """
-        return self.timings.copy()
+        with self._timings_lock:
+            return self._get_thread_timings().copy()
 
     def reset(self) -> None:
         """
-        Clear all captured timings.
+        Clear all captured timings for the current thread.
 
         Call this between tokens or inference runs to start fresh.
         """
-        self.timings.clear()
+        with self._timings_lock:
+            timings = self._get_thread_timings()
+            timings.clear()
 
     def detach(self) -> None:
         """

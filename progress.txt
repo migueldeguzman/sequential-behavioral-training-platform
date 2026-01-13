@@ -177,3 +177,21 @@ Features: powermetrics integration, per-layer/per-token profiling, SQLite storag
 - Comprehensive error handling and logging throughout
 - Verified Python syntax with py_compile (no errors)
 
+### EP-011: LayerProfiler Class - Timing Capture - COMPLETED
+- Enhanced LayerProfiler with thread-local storage for concurrent safety
+- Added threading.local() for thread-local timing storage (_local attribute)
+- Added threading.Lock() for thread-safe access to timings (_timings_lock)
+- Implemented _get_thread_timings() helper method to get or create thread-local timings list
+- Updated post-hook to store timings in thread-local storage using _get_thread_timings()
+- Pre-hook already implemented to record start time using time.perf_counter() (from EP-010)
+- Post-hook already implemented to record end time and calculate duration_ms (from EP-010)
+- torch.mps.synchronize() already implemented in post-hook for Apple Silicon timing (from EP-010)
+- Updated get_timings() to use lock and retrieve timings from thread-local storage
+  - Returns copy of thread-local timings list for safety
+  - Protected by _timings_lock for thread-safe access
+- Updated reset() to clear thread-local timings with lock protection
+  - Clears timings for current thread only
+  - Protected by _timings_lock for thread-safe access
+- All timing capture features now fully thread-safe and concurrent-ready
+- Verified Python syntax with py_compile (no errors)
+
