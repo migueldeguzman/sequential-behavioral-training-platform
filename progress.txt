@@ -534,3 +534,34 @@ Features: powermetrics integration, per-layer/per-token profiling, SQLite storag
 - Verified Python syntax with py_compile (no errors)
 - Updated PRD: EP-019 passes = true
 
+### EP-020: InferencePipelineProfiler - Section Timing - COMPLETED
+- Verified section() context manager already implemented in pipeline_profiler.py
+- Implementation analysis (lines 332-429):
+  - section() method attached to ProfilingSession class (line 429)
+  - Context manager decorator creates proper context (lines 346-425)
+  - Records section start timestamp using time.time() (line 348)
+  - Calculates start_relative_ms from session start time (line 349)
+  - Uses torch.mps.synchronize() before timing for accuracy (lines 354-359)
+  - Records section end timestamp using time.time() (line 373)
+  - Calculates end_relative_ms and duration_ms (lines 374-375)
+  - Correlates with power samples for energy calculation (lines 377-407)
+    - Filters samples within section's time range (lines 386-388)
+    - Integrates power over time using trapezoidal rule (lines 391-402)
+    - Calculates average power for the section (line 402)
+    - Handles single sample case with estimation (lines 403-406)
+  - Stores section data in SectionTiming dataclass (lines 409-418)
+  - Appends to session.sections list for database storage (line 421)
+  - Comprehensive logging for section start and completion (lines 351, 423)
+- SectionTiming dataclass properly defined (lines 49-59):
+  - phase: Pipeline phase identifier
+  - section_name: Section identifier within phase
+  - start_time, end_time: Absolute timestamps
+  - duration_ms: Computed duration in milliseconds
+  - energy_mj: Computed energy consumption in millijoules
+  - avg_power_mw: Average power draw in milliwatts
+  - power_samples: List of PowerSample objects during section
+- Database save integration verified in _save_run_to_database() (lines 315-326)
+- All EP-020 requirements met and implemented
+- Verified Python syntax with py_compile (no errors)
+- Updated PRD: EP-020 passes = true
+

@@ -393,7 +393,7 @@
       "title": "InferencePipelineProfiler - Section Timing",
       "description": "Implement section timing context manager",
       "priority": "CRITICAL",
-      "passes": false,
+      "passes": true,
       "steps": [
         "Create section() context manager",
         "Record section start timestamp",
