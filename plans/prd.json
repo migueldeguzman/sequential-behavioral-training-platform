@@ -589,7 +589,7 @@
       "title": "Profiling Delete Endpoint",
       "description": "Create endpoint to delete profiling runs",
       "priority": "HIGH",
-      "passes": false,
+      "passes": true,
       "steps": [
         "Implement DELETE /api/profiling/run/{id} endpoint",
         "Cascade delete all related records",

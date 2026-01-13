@@ -2296,6 +2296,64 @@ async def export_profiling_run(
             db.close()
 
 
+@app.delete("/api/profiling/run/{run_id}")
+async def delete_profiling_run(run_id: str):
+    """
+    Delete a profiling run and all related records.
+
+    Cascade deletes all related records:
+    - power_samples
+    - pipeline_sections
+    - tokens
+    - layer_metrics
+    - component_metrics
+    - deep_operation_metrics
+
+    Args:
+        run_id: Unique identifier for the profiling run
+
+    Returns:
+        Success confirmation message
+
+    Raises:
+        HTTPException: 404 if run not found, 500 for deletion failures
+    """
+    db = None
+    try:
+        # Connect to database
+        db = ProfileDatabase()
+
+        # Check if run exists
+        run = db.get_run(run_id)
+        if not run:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Profiling run {run_id} not found"
+            )
+
+        # Delete run (cascade delete handles all related records)
+        db.delete_run(run_id)
+        logger.info(f"Successfully deleted profiling run {run_id}")
+
+        return {
+            "success": True,
+            "message": f"Profiling run {run_id} deleted successfully",
+            "run_id": run_id
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete profiling run {run_id}: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to delete profiling run: {str(e)}"
+        )
+    finally:
+        if db:
+            db.close()
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

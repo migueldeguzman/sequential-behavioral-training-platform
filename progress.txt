@@ -1140,3 +1140,38 @@ Features: powermetrics integration, per-layer/per-token profiling, SQLite storag
 - Verified Python syntax with py_compile (no errors)
 - Updated PRD: EP-032 passes = true
 
+### EP-033: Profiling Delete Endpoint - COMPLETED
+- Implemented DELETE /api/profiling/run/{run_id} endpoint in backend/main.py (lines 2299-2354)
+  - Accepts run_id path parameter to identify the profiling run to delete
+  - Validates run_id exists and returns 404 if not found
+- Comprehensive deletion functionality:
+  - Connects to ProfileDatabase and checks if run exists
+  - Uses database.delete_run(run_id) which performs cascade delete
+  - Cascade delete removes all related records from all tables:
+    * power_samples (all power measurements for this run)
+    * pipeline_sections (all phase and section timings)
+    * tokens (all generated tokens with metrics)
+    * layer_metrics (all per-layer profiling data)
+    * component_metrics (all per-component metrics)
+    * deep_operation_metrics (all operation-level metrics if present)
+  - CASCADE DELETE constraints defined in database schema ensure data integrity
+  - Single delete_run() call handles all related record cleanup
+- Returns success response with:
+  - success: True (boolean flag for client confirmation)
+  - message: Human-readable success message
+  - run_id: Echo back the deleted run identifier
+- Comprehensive error handling:
+  - HTTPException with 404 status when run not found
+  - HTTPException with 500 status for any deletion failures
+  - Re-raises HTTPException to preserve proper error codes
+  - Logs all errors with detailed messages for debugging
+- Proper resource management:
+  - Closes database connection in finally block
+  - try/except blocks protect against partial deletion failures
+  - Database connection closed even if errors occur
+- Logging:
+  - Info-level log on successful deletion
+  - Error-level log with exception details on failures
+- Verified Python syntax with py_compile (no errors)
+- Updated PRD: EP-033 passes = true
+
