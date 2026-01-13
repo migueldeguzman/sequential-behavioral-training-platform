@@ -1378,7 +1378,7 @@
       "title": "Phase-Tagged Power Samples",
       "description": "Tag every power sample with the active inference phase for precise energy attribution",
       "priority": "HIGH",
-      "passes": false,
+      "passes": true,
       "reference": "TokenPowerBench: Phase-aligned metrics pipeline attributes energy to prefill/decode stages",
       "steps": [
         "Add 'phase' field to PowerSample dataclass (idle/pre_inference/prefill/decode/post_inference)",

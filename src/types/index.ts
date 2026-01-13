@@ -279,6 +279,16 @@ export interface ProfilingRunSummary {
     decode: { duration_ms: number; energy_mj: number };
     post_inference: { duration_ms: number; energy_mj: number };
   };
+  phase_power_breakdown?: {
+    phase: string;
+    sample_count: number;
+    avg_power_mw: number;
+    peak_power_mw: number;
+    avg_cpu_power_mw: number;
+    avg_gpu_power_mw: number;
+    avg_ane_power_mw: number;
+    avg_dram_power_mw: number;
+  }[];
   average_layer_metrics: {
     layer_index: number;
     avg_duration_ms: number;

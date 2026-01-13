@@ -2592,3 +2592,44 @@ Features implemented:
 - Responsive grid layout adapting to number of runs
 
 Updated PRD: EP-062 passes = true
+
+
+================================================================================
+2026-01-14 - EP-084 Phase-Tagged Power Samples
+================================================================================
+
+Status: COMPLETED
+
+Description:
+Implemented phase-tagged power sampling for precise energy attribution to 
+inference phases (idle, pre_inference, prefill, decode, post_inference).
+
+Changes made:
+
+Backend:
+- Added 'phase' field to PowerSample dataclass with default value 'idle'
+- Updated PowerMonitor class with set_phase() and get_phase() methods
+- Modified _parse_plist_sample() to tag samples with current phase
+- Updated power_samples table schema to include phase column (TEXT DEFAULT 'idle')
+- Modified add_power_samples() to insert phase data into database
+- Added phase_power_breakdown query to get_run_summary() for phase-specific power metrics
+  - Includes sample_count, avg_power_mw, peak_power_mw per phase
+  - Includes component breakdown (CPU, GPU, ANE, DRAM) per phase
+
+Frontend:
+- Added phase_power_breakdown to ProfilingRunSummary TypeScript interface
+- Updated PowerTimeSeriesChart to color-code background by phase
+- Added phaseColors config with semi-transparent colors:
+  - idle: gray (rgba 107,114,128,0.1)
+  - pre_inference: blue (rgba 59,130,246,0.1)
+  - prefill: green (rgba 16,185,129,0.15)
+  - decode: orange (rgba 245,158,11,0.15)
+  - post_inference: purple (rgba 168,85,247,0.1)
+- Implemented phase region drawing in chart canvas
+
+Testing:
+- TypeScript compilation: PASSED (npm run build successful)
+- Build warnings: Only ESLint exhaustive-deps warnings (non-breaking)
+
+Updated PRD: EP-084 passes = true
+

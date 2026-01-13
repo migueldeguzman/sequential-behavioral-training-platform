@@ -29,6 +29,13 @@ interface ChartConfig {
     text: string;
     background: string;
   };
+  phaseColors: {
+    idle: string;
+    pre_inference: string;
+    prefill: string;
+    decode: string;
+    post_inference: string;
+  };
   lineWidth: number;
 }
 
@@ -48,6 +55,13 @@ const DEFAULT_CONFIG: ChartConfig = {
     grid: '#374151',
     text: '#9ca3af',
     background: '#1f2937',
+  },
+  phaseColors: {
+    idle: 'rgba(107, 114, 128, 0.1)', // gray
+    pre_inference: 'rgba(59, 130, 246, 0.1)', // blue
+    prefill: 'rgba(16, 185, 129, 0.15)', // green
+    decode: 'rgba(245, 158, 11, 0.15)', // orange
+    post_inference: 'rgba(168, 85, 247, 0.1)', // purple
   },
   lineWidth: 2,
 };
@@ -262,6 +276,40 @@ export function PowerTimeSeriesChart({
     // X-axis label
     ctx.textAlign = 'center';
     ctx.fillText('Time (seconds)', width / 2, height - 5);
+
+    // Draw phase background regions
+    if (visibleSamples.some(s => s.phase)) {
+      let currentPhase = visibleSamples[0]?.phase || 'idle';
+      let phaseStartIndex = 0;
+
+      for (let i = 1; i <= visibleSamples.length; i++) {
+        const isLastSample = i === visibleSamples.length;
+        const nextPhase = isLastSample ? null : visibleSamples[i].phase;
+
+        // Draw phase region when phase changes or at end
+        if (isLastSample || nextPhase !== currentPhase) {
+          const startX = timeToX(visibleSamples[phaseStartIndex].timestamp);
+          const endX = isLastSample
+            ? timeToX(visibleSamples[i - 1].timestamp)
+            : timeToX(visibleSamples[i].timestamp);
+
+          // Draw semi-transparent background for this phase
+          const phaseColor = DEFAULT_CONFIG.phaseColors[currentPhase as keyof typeof DEFAULT_CONFIG.phaseColors] || DEFAULT_CONFIG.phaseColors.idle;
+          ctx.fillStyle = phaseColor;
+          ctx.fillRect(
+            startX,
+            DEFAULT_CONFIG.padding.top,
+            endX - startX,
+            chartHeight
+          );
+
+          if (!isLastSample) {
+            currentPhase = nextPhase || 'idle';
+            phaseStartIndex = i;
+          }
+        }
+      }
+    }
 
     // Helper function to draw a line series
     const drawLine = (color: string, getValue: (sample: PowerSample) => number) => {

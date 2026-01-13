@@ -28,6 +28,7 @@ class PowerSample:
     ane_power_mw: float
     dram_power_mw: float
     total_power_mw: float
+    phase: str = 'idle'  # Inference phase: idle, pre_inference, prefill, decode, post_inference
 
     @property
     def total_power_w(self) -> float:
@@ -68,6 +69,7 @@ class PowerMonitor:
         self._running = False
         self._sampling_thread: Optional[threading.Thread] = None
         self._plist_buffer = ""
+        self._current_phase: str = 'idle'  # Current inference phase
 
     def _parse_plist_sample(self, plist_data: Dict[str, Any]) -> Optional[PowerSample]:
         """
@@ -123,7 +125,8 @@ class PowerMonitor:
                 gpu_power_mw=gpu_power_mw,
                 ane_power_mw=ane_power_mw,
                 dram_power_mw=dram_power_mw,
-                total_power_mw=total_power_mw
+                total_power_mw=total_power_mw,
+                phase=self._current_phase
             )
         except (KeyError, TypeError, ValueError) as e:
             # Gracefully handle parsing errors
@@ -306,6 +309,27 @@ class PowerMonitor:
         """
         with self._samples_lock:
             return self._samples[-1] if self._samples else None
+
+    def set_phase(self, phase: str) -> None:
+        """
+        Set the current inference phase for tagging power samples.
+
+        Args:
+            phase: Phase name (idle, pre_inference, prefill, decode, post_inference)
+        """
+        valid_phases = {'idle', 'pre_inference', 'prefill', 'decode', 'post_inference'}
+        if phase not in valid_phases:
+            raise ValueError(f"Invalid phase '{phase}'. Must be one of: {valid_phases}")
+        self._current_phase = phase
+
+    def get_phase(self) -> str:
+        """
+        Get the current inference phase.
+
+        Returns:
+            Current phase name
+        """
+        return self._current_phase
 
     def __enter__(self):
         """Context manager entry"""

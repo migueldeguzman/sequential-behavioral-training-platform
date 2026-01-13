@@ -121,6 +121,7 @@ class ProfileDatabase:
                 ane_power_mw REAL NOT NULL,
                 dram_power_mw REAL NOT NULL,
                 total_power_mw REAL NOT NULL,
+                phase TEXT DEFAULT 'idle',
                 FOREIGN KEY (run_id) REFERENCES profiling_runs(run_id) ON DELETE CASCADE
             )
         """)
@@ -406,7 +407,7 @@ class ProfileDatabase:
             run_id: Run identifier
             samples: List of power sample dicts with keys:
                 timestamp_ms, cpu_power_mw, gpu_power_mw, ane_power_mw,
-                dram_power_mw, total_power_mw
+                dram_power_mw, total_power_mw, phase
 
         Raises:
             sqlite3.IntegrityError: If run_id doesn't exist (foreign key constraint)
@@ -421,8 +422,8 @@ class ProfileDatabase:
                 """
                 INSERT INTO power_samples (
                     run_id, timestamp_ms, cpu_power_mw, gpu_power_mw,
-                    ane_power_mw, dram_power_mw, total_power_mw
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ane_power_mw, dram_power_mw, total_power_mw, phase
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 [
                     (
@@ -433,6 +434,7 @@ class ProfileDatabase:
                         s["ane_power_mw"],
                         s["dram_power_mw"],
                         s["total_power_mw"],
+                        s.get("phase", "idle"),
                     )
                     for s in samples
                 ],
@@ -817,7 +819,7 @@ class ProfileDatabase:
 
         summary = dict(run)
 
-        # Get phase breakdown
+        # Get phase breakdown from pipeline sections
         cursor.execute(
             """
             SELECT
@@ -834,6 +836,27 @@ class ProfileDatabase:
         )
         phases = cursor.fetchall()
         summary["phase_breakdown"] = [dict(phase) for phase in phases]
+
+        # Get phase-specific energy from power samples (direct from phase tags)
+        cursor.execute(
+            """
+            SELECT
+                phase,
+                COUNT(*) as sample_count,
+                AVG(total_power_mw) as avg_power_mw,
+                MAX(total_power_mw) as peak_power_mw,
+                AVG(cpu_power_mw) as avg_cpu_power_mw,
+                AVG(gpu_power_mw) as avg_gpu_power_mw,
+                AVG(ane_power_mw) as avg_ane_power_mw,
+                AVG(dram_power_mw) as avg_dram_power_mw
+            FROM power_samples
+            WHERE run_id = ?
+            GROUP BY phase
+            """,
+            (run_id,)
+        )
+        power_phases = cursor.fetchall()
+        summary["phase_power_breakdown"] = [dict(phase) for phase in power_phases]
 
         # Get average metrics per layer
         cursor.execute(
