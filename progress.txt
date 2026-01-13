@@ -2061,3 +2061,26 @@ Implementation details:
 - TypeScript types properly defined with d3.HierarchyRectangularNode
 - TypeScript compilation verified with npm run build (successful)
 - Updated PRD: EP-055 passes = true
+
+2026-01-14 - EP-056: SankeyChart Component - COMPLETE
+- Created Sankey flow diagram visualization for energy flow analysis
+- Features implemented:
+  - D3-sankey library integration for hierarchical flow diagrams
+  - Node definitions: Input, Layers, Attention, MLP, Output
+  - Link definitions with energy flow values (mJ/mW/ms)
+  - Gradient-colored links showing flow between source and target
+  - Interactive hover effects with detailed tooltips
+  - Click handlers for nodes and links (drill-down capability)
+  - Node positioning with left/right label alignment
+  - Automatic node sizing based on energy throughput
+  - Color-coded by category: Input (indigo), Layer (violet), Attention (pink), MLP (amber), Output (green)
+  - Tooltip displays: source → target, metric value
+  - SVG-based rendering with responsive layout
+  - Legend showing category color mapping
+  - Help text explaining interaction pattern
+- Component accepts nodes array with id/name/category
+- Component accepts links array with source/target/value/label
+- Supports three metrics: energy (mJ), time (ms), power (mW)
+- TypeScript types properly defined with D3SankeyNode
+- TypeScript compilation verified with npm run build (successful)
+- Updated PRD: EP-056 passes = true

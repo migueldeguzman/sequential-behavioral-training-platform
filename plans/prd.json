@@ -938,7 +938,7 @@
       "title": "Frontend - SankeyChart Component",
       "description": "Create Sankey flow diagram",
       "priority": "MEDIUM",
-      "passes": false,
+      "passes": true,
       "steps": [
         "Create src/components/profiling/charts/SankeyChart.tsx",
         "Use D3-sankey library",
