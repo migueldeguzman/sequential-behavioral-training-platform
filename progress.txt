@@ -1478,3 +1478,56 @@ Features: powermetrics integration, per-layer/per-token profiling, SQLite storag
 - Provides final summary to clients for displaying completion status and metrics
 - Verified Python syntax with py_compile for both files (no errors)
 - Updated PRD: EP-039 passes = true
+
+## 2026-01-14
+### EP-040: Frontend - TypeScript Types - COMPLETED
+- Added comprehensive TypeScript types to src/types/index.ts for Energy Profiler feature
+- Implemented PowerSample interface (line 151-159)
+  - timestamp: Relative to inference start (ms)
+  - cpu_power_mw, gpu_power_mw, ane_power_mw, dram_power_mw, total_power_mw
+  - phase: Optional phase tag for phase-aligned metrics
+- Implemented PipelineSection interface (line 161-170)
+  - Complete section timing and energy data per phase
+  - phase, section_name, start_time, end_time, duration_ms, energy_mj
+- Implemented ComponentMetrics interface (line 172-181)
+  - Per-component metrics: duration, activation stats (mean, std, max, sparsity)
+  - component_name includes q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj
+- Implemented LayerMetrics interface (line 183-190)
+  - Per-layer per-token profiling data
+  - layer_index, total_duration_ms, energy_mj, components array
+- Implemented DeepOperationMetrics interface (line 192-202)
+  - Lowest-level operation profiling: qk_matmul, scale, mask, softmax, value_matmul
+  - Includes attention_entropy, max_attention_weight, attention_sparsity
+  - Includes activation_kill_ratio (MLP), variance_ratio (LayerNorm)
+- Implemented TokenMetrics interface (line 204-216)
+  - Per-token metrics during decode phase
+  - token_position, token_text, phase, timing, energy, power_snapshot
+  - Includes nested layers array with full hierarchy
+- Implemented ProfilingRun interface (line 218-266)
+  - Complete profiling run with all metadata and related data
+  - run_id, timestamp, model_name, prompt, response, tokens counts
+  - Model architectural features: num_layers, hidden_size, attention_mechanism, is_moe
+  - Calculated metrics: joules_per_token, energy_delay_product, cost_usd, co2_grams
+  - Optional arrays: power_samples, pipeline_sections, tokens
+- Implemented ProfilingRunSummary interface (line 268-310)
+  - Aggregated statistics per run for efficient display
+  - phase_breakdown with duration, energy per phase
+  - average_layer_metrics and average_component_metrics
+  - hottest_components identification
+  - efficiency_metrics including tokens_per_joule, energy_delay_product
+  - component_energy_breakdown showing CPU/GPU/ANE/DRAM percentages
+- Implemented WebSocket message types (lines 312-398)
+  - ProfilingMessageType enum with 7 message types
+  - BaseProfilingMessage with type and timestamp
+  - PowerSampleMessage for power measurements
+  - SectionStartMessage and SectionEndMessage for section events
+  - TokenCompleteMessage for token generation events
+  - LayerMetricsMessage and ComponentMetricsMessage for detailed profiling
+  - InferenceCompleteMessage for final summary
+  - ProfilingMessage union type for type-safe message handling
+- Implemented Profiling API request types (lines 400-422)
+  - ProfiledGenerateRequest for profiled inference requests
+  - ProfilingRunsFilter for querying and filtering runs
+- All types align with backend database schema and API contracts
+- Verified TypeScript compilation with npm run build (successful)
+- Updated PRD: EP-040 passes = true

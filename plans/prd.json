@@ -681,7 +681,7 @@
       "title": "Frontend - TypeScript Types",
       "description": "Define TypeScript types for profiling data",
       "priority": "HIGH",
-      "passes": false,
+      "passes": true,
       "steps": [
         "Add ProfilingRun interface to src/types/index.ts",
         "Add PowerSample interface",

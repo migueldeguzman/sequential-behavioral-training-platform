@@ -145,3 +145,278 @@ export interface AuthState {
   user: User | null;
   token: string | null;
 }
+
+// Energy Profiling types
+
+export interface PowerSample {
+  timestamp: number; // Relative to inference start (ms)
+  cpu_power_mw: number;
+  gpu_power_mw: number;
+  ane_power_mw: number;
+  dram_power_mw: number;
+  total_power_mw: number;
+  phase?: string; // idle/pre_inference/prefill/decode/post_inference
+}
+
+export interface PipelineSection {
+  id: number;
+  run_id: string;
+  phase: string; // pre_inference/prefill/decode/post_inference
+  section_name: string;
+  start_time: number; // ms
+  end_time: number; // ms
+  duration_ms: number;
+  energy_mj: number;
+}
+
+export interface ComponentMetrics {
+  id: number;
+  layer_metric_id: number;
+  component_name: string; // q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj, etc.
+  duration_ms: number;
+  activation_mean: number;
+  activation_std: number;
+  activation_max: number;
+  sparsity: number;
+}
+
+export interface LayerMetrics {
+  id: number;
+  token_id: number;
+  layer_index: number;
+  total_duration_ms: number;
+  energy_mj: number;
+  components: ComponentMetrics[];
+}
+
+export interface DeepOperationMetrics {
+  id: number;
+  component_metric_id: number;
+  operation_name: string; // qk_matmul, scale, mask, softmax, value_matmul, etc.
+  duration_ms: number;
+  attention_entropy?: number;
+  max_attention_weight?: number;
+  attention_sparsity?: number;
+  activation_kill_ratio?: number; // For MLP operations
+  variance_ratio?: number; // For LayerNorm
+}
+
+export interface TokenMetrics {
+  id: number;
+  run_id: string;
+  token_position: number;
+  token_text: string;
+  phase: string; // prefill/decode
+  start_time: number; // ms
+  end_time: number; // ms
+  duration_ms: number;
+  energy_mj: number;
+  power_snapshot_mw: number;
+  layers: LayerMetrics[];
+}
+
+export interface ProfilingRun {
+  id: string;
+  timestamp: string;
+  model_name: string;
+  model_size_mb: number;
+  prompt: string;
+  response: string;
+  total_duration_ms: number;
+  total_energy_mj: number;
+  input_tokens: number;
+  output_tokens: number;
+  profiling_depth: string; // module/deep
+  tags?: string[];
+  experiment_name?: string;
+  baseline_power_mw?: number;
+  peak_power_mw?: number;
+  peak_power_cpu_mw?: number;
+  peak_power_gpu_mw?: number;
+  peak_power_ane_mw?: number;
+  peak_power_dram_mw?: number;
+  batch_size?: number;
+  inference_engine?: string;
+
+  // Model architectural features
+  num_layers?: number;
+  hidden_size?: number;
+  intermediate_size?: number;
+  num_attention_heads?: number;
+  num_key_value_heads?: number;
+  attention_mechanism?: string; // MHA/GQA/MQA
+  is_moe?: boolean;
+
+  // Calculated metrics
+  prefill_energy_mj?: number;
+  decode_energy_mj?: number;
+  joules_per_token?: number;
+  joules_per_input_token?: number;
+  joules_per_output_token?: number;
+  energy_per_million_params?: number;
+  tokens_per_joule?: number;
+  energy_delay_product?: number;
+  cost_usd?: number;
+  co2_grams?: number;
+
+  // Related data
+  power_samples?: PowerSample[];
+  pipeline_sections?: PipelineSection[];
+  tokens?: TokenMetrics[];
+}
+
+export interface ProfilingRunSummary {
+  run_id: string;
+  total_duration_ms: number;
+  total_energy_mj: number;
+  phase_breakdown: {
+    pre_inference: { duration_ms: number; energy_mj: number };
+    prefill: { duration_ms: number; energy_mj: number };
+    decode: { duration_ms: number; energy_mj: number };
+    post_inference: { duration_ms: number; energy_mj: number };
+  };
+  average_layer_metrics: {
+    layer_index: number;
+    avg_duration_ms: number;
+    avg_energy_mj: number;
+  }[];
+  average_component_metrics: {
+    component_name: string;
+    avg_duration_ms: number;
+  }[];
+  hottest_components: {
+    component_name: string;
+    layer_index: number;
+    duration_ms: number;
+  }[];
+  efficiency_metrics: {
+    joules_per_token: number;
+    prefill_energy_per_token: number;
+    decode_energy_per_token: number;
+    tokens_per_second: number;
+    tokens_per_joule: number;
+    energy_delay_product: number;
+  };
+  component_energy_breakdown: {
+    cpu_energy_mj: number;
+    gpu_energy_mj: number;
+    ane_energy_mj: number;
+    dram_energy_mj: number;
+    cpu_percentage: number;
+    gpu_percentage: number;
+    ane_percentage: number;
+    dram_percentage: number;
+  };
+}
+
+// WebSocket message types
+
+export type ProfilingMessageType =
+  | 'power_sample'
+  | 'section_start'
+  | 'section_end'
+  | 'token_complete'
+  | 'layer_metrics'
+  | 'component_metrics'
+  | 'inference_complete';
+
+export interface BaseProfilingMessage {
+  type: ProfilingMessageType;
+  timestamp: number; // ms since inference start
+}
+
+export interface PowerSampleMessage extends BaseProfilingMessage {
+  type: 'power_sample';
+  data: PowerSample;
+}
+
+export interface SectionStartMessage extends BaseProfilingMessage {
+  type: 'section_start';
+  phase: string;
+  section_name: string;
+}
+
+export interface SectionEndMessage extends BaseProfilingMessage {
+  type: 'section_end';
+  phase: string;
+  section_name: string;
+  duration_ms: number;
+  energy_mj: number;
+}
+
+export interface TokenCompleteMessage extends BaseProfilingMessage {
+  type: 'token_complete';
+  token_position: number;
+  token_text: string;
+  duration_ms: number;
+  energy_mj: number;
+  power_snapshot_mw: number;
+  layer_metrics_summary: {
+    total_duration_ms: number;
+    total_energy_mj: number;
+  };
+}
+
+export interface LayerMetricsMessage extends BaseProfilingMessage {
+  type: 'layer_metrics';
+  token_position: number;
+  layer_index: number;
+  metrics: Omit<LayerMetrics, 'id' | 'token_id' | 'components'>;
+}
+
+export interface ComponentMetricsMessage extends BaseProfilingMessage {
+  type: 'component_metrics';
+  token_position: number;
+  layer_index: number;
+  component_name: string;
+  metrics: Omit<ComponentMetrics, 'id' | 'layer_metric_id'>;
+}
+
+export interface InferenceCompleteMessage extends BaseProfilingMessage {
+  type: 'inference_complete';
+  run_id: string;
+  total_duration_ms: number;
+  total_energy_mj: number;
+  token_count: number;
+  tokens_per_second: number;
+  summary: {
+    prefill_duration_ms: number;
+    prefill_energy_mj: number;
+    decode_duration_ms: number;
+    decode_energy_mj: number;
+    joules_per_token: number;
+  };
+}
+
+export type ProfilingMessage =
+  | PowerSampleMessage
+  | SectionStartMessage
+  | SectionEndMessage
+  | TokenCompleteMessage
+  | LayerMetricsMessage
+  | ComponentMetricsMessage
+  | InferenceCompleteMessage;
+
+// Profiling API request types
+
+export interface ProfiledGenerateRequest {
+  prompt: string;
+  model_path?: string;
+  profiling_depth?: 'module' | 'deep';
+  tags?: string[];
+  experiment_name?: string;
+  temperature?: number;
+  max_length?: number;
+}
+
+export interface ProfilingRunsFilter {
+  model?: string;
+  date_from?: string;
+  date_to?: string;
+  tags?: string[];
+  experiment?: string;
+  limit?: number;
+  offset?: number;
+  sort_by?: 'date' | 'duration' | 'energy' | 'efficiency';
+  sort_order?: 'asc' | 'desc';
+}
