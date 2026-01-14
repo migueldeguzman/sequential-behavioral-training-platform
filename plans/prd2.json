@@ -606,7 +606,7 @@
       "title": "Fix concurrent profiling request handling",
       "description": "If two profiling requests start simultaneously, they may interfere with each other (shared model state, WebSocket events).",
       "priority": "medium",
-      "passes": false,
+      "passes": true,
       "debug_steps": {
         "review": "Read backend/main.py profiled_generate. Uses global model state and WebSocket manager. No request isolation.",
         "test": "Start two profiling requests simultaneously. Events may mix up or one may fail.",
