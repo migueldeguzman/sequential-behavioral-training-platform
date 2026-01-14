@@ -99,7 +99,7 @@
       "title": "Fix energy calculation using near-zero duration",
       "description": "Token energy is calculated as current_power_mw * token_duration_ms / 1000.0 but token_duration_ms is near-zero due to BUG-004, resulting in 0 energy per token.",
       "priority": "high",
-      "passes": false,
+      "passes": true,
       "debug_steps": {
         "review": "Read backend/main.py around line 1945. token_energy_mj = current_power_mw * token_duration_ms / 1000.0. With duration ~0, energy ~0.",
         "test": "Profile and check token energy values. All show 0.00 mJ or very small values.",
