@@ -502,7 +502,7 @@
       "title": "Fix RealTimeView duration calculation",
       "description": "RealTimeView shows duration from last power sample timestamp, but this may be wrong if timestamp is absolute instead of relative.",
       "priority": "low",
-      "passes": false,
+      "passes": true,
       "debug_steps": {
         "review": "Read src/components/profiling/RealTimeView.tsx line 185. Uses powerSamples[last].timestamp / 1000 for duration display.",
         "test": "Check Duration stat during profiling. May show wrong value (very large if Unix timestamp).",

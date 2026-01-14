@@ -183,7 +183,7 @@ export function RealTimeView() {
             </div>
             <div className="mt-1 text-2xl font-semibold text-gray-900 dark:text-gray-100">
               {powerSamples.length > 0
-                ? `${(powerSamples[powerSamples.length - 1].timestamp / 1000).toFixed(1)}s`
+                ? `${((powerSamples[powerSamples.length - 1].timestamp - powerSamples[0].timestamp) / 1000).toFixed(1)}s`
                 : '0s'}
             </div>
           </div>
