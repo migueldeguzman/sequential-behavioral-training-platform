@@ -372,7 +372,7 @@
       "title": "Fix sampling interval not being respected",
       "description": "PowerMonitor sample_interval_ms is passed to powermetrics but actual sample rate may vary due to system load or powermetrics behavior.",
       "priority": "low",
-      "passes": false,
+      "passes": true,
       "debug_steps": {
         "review": "Read backend/profiling/power_monitor.py start(). Passes -i sample_interval_ms to powermetrics. Check if samples arrive at expected rate.",
         "test": "Set sample_interval_ms to 50. Check if 20 samples/second are collected.",

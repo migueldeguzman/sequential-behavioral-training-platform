@@ -81,6 +81,46 @@ class PowerMonitor:
         self._peak_dram_power_mw: float = 0.0
         self._peak_timestamp_ms: float = 0.0
 
+        # Sample rate tracking
+        self._last_sample_rate_check: Optional[float] = None
+        self._sample_rate_check_interval: float = 5.0  # Check sample rate every 5 seconds
+        self._sample_count_at_last_check: int = 0
+
+    def _check_sample_rate(self) -> None:
+        """
+        Check actual sample rate and log warning if it deviates significantly from requested rate.
+        This method should be called with _samples_lock held.
+        """
+        current_time = time.time()
+
+        # Initialize on first call
+        if self._last_sample_rate_check is None:
+            self._last_sample_rate_check = current_time
+            self._sample_count_at_last_check = len(self._samples)
+            return
+
+        # Check if enough time has passed since last check
+        time_since_check = current_time - self._last_sample_rate_check
+        if time_since_check < self._sample_rate_check_interval:
+            return
+
+        # Calculate actual sample rate
+        samples_collected = len(self._samples) - self._sample_count_at_last_check
+        actual_rate_hz = samples_collected / time_since_check
+        expected_rate_hz = 1000.0 / self.sample_interval_ms
+
+        # Log if sample rate deviates significantly (>20%)
+        deviation_pct = abs(actual_rate_hz - expected_rate_hz) / expected_rate_hz * 100
+        if deviation_pct > 20:
+            print(f"Warning: Sample rate deviation detected. "
+                  f"Expected: {expected_rate_hz:.1f} samples/s, "
+                  f"Actual: {actual_rate_hz:.1f} samples/s "
+                  f"({deviation_pct:.1f}% deviation)")
+
+        # Update tracking
+        self._last_sample_rate_check = current_time
+        self._sample_count_at_last_check = len(self._samples)
+
     def _parse_plist_sample(self, plist_data: Dict[str, Any]) -> Optional[PowerSample]:
         """
         Parse a single power sample from powermetrics plist output.
@@ -221,6 +261,9 @@ class PowerMonitor:
                                         except Exception as cb_e:
                                             print(f"Warning: Power sample callback failed: {cb_e}")
 
+                                    # Periodically check and log actual sample rate
+                                    self._check_sample_rate()
+
                         except plistlib.InvalidFileException as e:
                             # Invalid plist format - log and skip this sample
                             print(f"Warning: Failed to parse plist (invalid format): {e}")
@@ -330,6 +373,10 @@ class PowerMonitor:
         self._peak_ane_power_mw = 0.0
         self._peak_dram_power_mw = 0.0
         self._peak_timestamp_ms = 0.0
+
+        # Reset sample rate tracking
+        self._last_sample_rate_check = None
+        self._sample_count_at_last_check = 0
 
         # Start background sampling thread
         self._sampling_thread = threading.Thread(target=self._sampling_loop, daemon=True)
@@ -556,6 +603,46 @@ class NvidiaPowerMonitor:
         self._peak_dram_power_mw: float = 0.0
         self._peak_timestamp_ms: float = 0.0
 
+        # Sample rate tracking
+        self._last_sample_rate_check: Optional[float] = None
+        self._sample_rate_check_interval: float = 5.0  # Check sample rate every 5 seconds
+        self._sample_count_at_last_check: int = 0
+
+    def _check_sample_rate(self) -> None:
+        """
+        Check actual sample rate and log warning if it deviates significantly from requested rate.
+        This method should be called with _samples_lock held.
+        """
+        current_time = time.time()
+
+        # Initialize on first call
+        if self._last_sample_rate_check is None:
+            self._last_sample_rate_check = current_time
+            self._sample_count_at_last_check = len(self._samples)
+            return
+
+        # Check if enough time has passed since last check
+        time_since_check = current_time - self._last_sample_rate_check
+        if time_since_check < self._sample_rate_check_interval:
+            return
+
+        # Calculate actual sample rate
+        samples_collected = len(self._samples) - self._sample_count_at_last_check
+        actual_rate_hz = samples_collected / time_since_check
+        expected_rate_hz = 1000.0 / self.sample_interval_ms
+
+        # Log if sample rate deviates significantly (>20%)
+        deviation_pct = abs(actual_rate_hz - expected_rate_hz) / expected_rate_hz * 100
+        if deviation_pct > 20:
+            print(f"Warning: Sample rate deviation detected. "
+                  f"Expected: {expected_rate_hz:.1f} samples/s, "
+                  f"Actual: {actual_rate_hz:.1f} samples/s "
+                  f"({deviation_pct:.1f}% deviation)")
+
+        # Update tracking
+        self._last_sample_rate_check = current_time
+        self._sample_count_at_last_check = len(self._samples)
+
     @classmethod
     def is_available(cls) -> bool:
         """
@@ -634,6 +721,9 @@ class NvidiaPowerMonitor:
                             except Exception as cb_e:
                                 print(f"Warning: Power sample callback failed: {cb_e}")
 
+                        # Periodically check and log actual sample rate
+                        self._check_sample_rate()
+
                 # Sleep for the specified interval
                 time.sleep(interval_seconds)
 
@@ -669,6 +759,10 @@ class NvidiaPowerMonitor:
         self._peak_ane_power_mw = 0.0
         self._peak_dram_power_mw = 0.0
         self._peak_timestamp_ms = 0.0
+
+        # Reset sample rate tracking
+        self._last_sample_rate_check = None
+        self._sample_count_at_last_check = 0
 
         # Start background sampling thread
         self._sampling_thread = threading.Thread(target=self._sampling_loop, daemon=True)
