@@ -1592,6 +1592,178 @@
         "Show knee of the curve (best tradeoff point)",
         "Create ThroughputEnergyTradeoff frontend component"
       ]
+    },
+    {
+      "id": "EP-097",
+      "title": "Gemma 3 Model Architecture Support",
+      "description": "Add support for Google Gemma 3 architecture in profiler - currently fails with 'Linear.forward() got unexpected keyword argument attention_mask'",
+      "priority": "CRITICAL",
+      "passes": true,
+      "error": "Linear.forward() got an unexpected keyword argument 'attention_mask'",
+      "debug_steps": {
+        "1_DEBUG_REVIEW": [
+          "Analyze error traceback to identify which module receives attention_mask incorrectly",
+          "Review Gemma 3 model architecture (GemmaForCausalLM) structure",
+          "Compare Gemma 3 component paths vs Llama/Mistral paths in ModelArchitectureDetector",
+          "Identify if DeepProfiler monkey-patches are incompatible with Gemma 3 attention",
+          "Check if LayerProfiler hooks modify forward signature unexpectedly"
+        ],
+        "2_TEST": [
+          "Run profiled_generate with profiling_depth='module' (no deep profiling)",
+          "Run profiled_generate with profiling_depth='deep' to isolate deep profiler issue",
+          "Test model.generate() directly without any profiling hooks",
+          "Print Gemma 3 model architecture tree to identify correct component paths",
+          "Log which hooks are registered and on which modules"
+        ],
+        "3_FIX": [
+          "Update ModelArchitectureDetector to detect Gemma 3 architecture",
+          "Add Gemma 3 component paths (self_attn.q_proj, mlp.gate_proj, etc.)",
+          "Update DeepProfiler instrumented_forward to accept **kwargs for compatibility",
+          "Update MLP and LayerNorm instrumented forwards to pass through all arguments",
+          "Add Gemma-specific handling if attention mechanism differs"
+        ],
+        "4_VERIFY": [
+          "Run profiled_generate with Gemma 3 model successfully",
+          "Verify power samples are collected during inference",
+          "Verify layer metrics are captured correctly",
+          "Verify database stores profiling run",
+          "Test both 'module' and 'deep' profiling depths"
+        ]
+      }
+    },
+    {
+      "id": "EP-098",
+      "title": "Frontend Model Dropdown Selector",
+      "description": "Replace text input with dropdown for trained models selection",
+      "priority": "HIGH",
+      "passes": true,
+      "debug_steps": {
+        "1_DEBUG_REVIEW": [
+          "Review current ProfilingControls.tsx text input implementation",
+          "Check /api/models endpoint returns correct model list",
+          "Verify ModelCheckpoint type has required fields (name, path, size)"
+        ],
+        "2_TEST": [
+          "Call /api/models endpoint and verify response format",
+          "Check models are sorted by most recent first",
+          "Verify trained-models directory contains expected models"
+        ],
+        "3_FIX": [
+          "Add useEffect to fetch models on component mount",
+          "Replace text input with select dropdown",
+          "Display model name and size in dropdown options",
+          "Show full path below dropdown when selected",
+          "Auto-select most recent model as default"
+        ],
+        "4_VERIFY": [
+          "Dropdown populates with all trained models",
+          "Selecting model updates modelPath state correctly",
+          "Start Profiling sends correct model_path to backend",
+          "Loading state shown while fetching models"
+        ]
+      }
+    },
+    {
+      "id": "EP-099",
+      "title": "Graceful Profiling Fallback",
+      "description": "Allow inference to run with basic timing if advanced profiling hooks fail",
+      "priority": "HIGH",
+      "passes": false,
+      "error": "Profiling failures cause 500 errors instead of graceful degradation",
+      "debug_steps": {
+        "1_DEBUG_REVIEW": [
+          "Identify all profiling components that can fail (PowerMonitor, LayerProfiler, DeepProfiler)",
+          "Review error handling in profiled_generate endpoint",
+          "Understand which failures are recoverable vs fatal",
+          "Check if partial results can be returned"
+        ],
+        "2_TEST": [
+          "Test with PowerMonitor unavailable (no sudoers)",
+          "Test with incompatible model architecture",
+          "Test with database write failures",
+          "Verify current error messages are informative"
+        ],
+        "3_FIX": [
+          "Wrap LayerProfiler.register_hooks() in try/catch",
+          "Wrap DeepProfiler.patch() in try/catch with skip on failure",
+          "Add fallback mode that only captures basic timing",
+          "Return partial profiling results with warning flags",
+          "Log detailed errors for debugging but return user-friendly messages"
+        ],
+        "4_VERIFY": [
+          "Inference completes even if deep profiling fails",
+          "Response includes warning about limited profiling data",
+          "Basic timing metrics still captured",
+          "Frontend displays appropriate warnings",
+          "No 500 errors for recoverable failures"
+        ]
+      }
+    },
+    {
+      "id": "EP-100",
+      "title": "Database Connection Management",
+      "description": "Fix 'NoneType' object has no attribute 'cursor' database errors",
+      "priority": "CRITICAL",
+      "passes": false,
+      "error": "'NoneType' object has no attribute 'cursor'",
+      "debug_steps": {
+        "1_DEBUG_REVIEW": [
+          "Review ProfileDatabase class initialization",
+          "Check database file path and permissions",
+          "Identify where self.conn becomes None",
+          "Review connection lifecycle (open, use, close)",
+          "Check for race conditions in async context"
+        ],
+        "2_TEST": [
+          "Verify profiling.db file exists and is writable",
+          "Test database operations in isolation",
+          "Check if connection is closed prematurely",
+          "Test concurrent database access scenarios"
+        ],
+        "3_FIX": [
+          "Add connection validation before operations",
+          "Implement connection pooling or reconnection logic",
+          "Use context manager for database operations",
+          "Add explicit error handling for None connection",
+          "Ensure database is initialized on backend startup"
+        ],
+        "4_VERIFY": [
+          "Database operations succeed without cursor errors",
+          "Profiling runs saved to database correctly",
+          "History browser retrieves past runs",
+          "No connection errors under concurrent load"
+        ]
+      }
+    },
+    {
+      "id": "EP-101",
+      "title": "API Field Name Consistency",
+      "description": "Ensure frontend and backend use consistent field names (snake_case vs camelCase)",
+      "priority": "HIGH",
+      "passes": true,
+      "debug_steps": {
+        "1_DEBUG_REVIEW": [
+          "Compare frontend ProfiledGenerateRequest type with backend Pydantic model",
+          "Identify all mismatched field names",
+          "Review FastAPI automatic camelCase conversion settings"
+        ],
+        "2_TEST": [
+          "Send request from frontend and log received payload in backend",
+          "Verify 422 errors are due to field name mismatches",
+          "Test with explicit field name mapping"
+        ],
+        "3_FIX": [
+          "Standardize on snake_case for API (Python convention)",
+          "Update backend ProfiledGenerateRequest to use snake_case",
+          "Update all references in profiled_generate function",
+          "Ensure frontend types match backend expectations"
+        ],
+        "4_VERIFY": [
+          "No more 422 Unprocessable Content errors",
+          "Request reaches backend with all fields populated",
+          "Frontend receives correctly formatted response"
+        ]
+      }
     }
   ]
 }

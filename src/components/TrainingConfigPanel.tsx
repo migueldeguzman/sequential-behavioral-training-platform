@@ -1,17 +1,19 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import type { TrainingConfig, Dataset } from "@/types";
+import type { TrainingConfig, Dataset, TextDataset } from "@/types";
 import { saveTrainingConfig, loadTrainingConfig, getDefaultTrainingConfig } from "@/lib/storage";
 
 interface TrainingConfigPanelProps {
   datasets: Dataset[];
+  textDatasets?: TextDataset[];
   onStartTraining: (config: TrainingConfig) => void;
   disabled?: boolean;
 }
 
 export default function TrainingConfigPanel({
   datasets,
+  textDatasets = [],
   onStartTraining,
   disabled = false,
 }: TrainingConfigPanelProps) {
@@ -89,65 +91,125 @@ export default function TrainingConfigPanel({
           <label className="block text-sm font-medium text-gray-300 mb-2">
             Training Sequence <span className="text-gray-500 text-xs">(click to add/remove)</span>
           </label>
-          <div className="space-y-2">
-            {datasets.map((dataset) => {
-              const seqNum = getSequenceNumber(dataset.name);
-              const isSelected = seqNum !== null;
-              return (
-                <div
-                  key={dataset.name}
-                  onClick={() => handleDatasetClick(dataset.name)}
-                  className={`flex items-center gap-3 p-3 rounded cursor-pointer transition-all ${
-                    isSelected
-                      ? "bg-blue-900/50 border-2 border-blue-500"
-                      : "bg-gray-800 border-2 border-transparent hover:border-gray-600"
-                  }`}
-                >
-                  <div
-                    className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${
-                      isSelected
-                        ? "bg-blue-600 text-white"
-                        : "bg-gray-700 text-gray-500"
-                    }`}
-                  >
-                    {seqNum || "-"}
-                  </div>
-                  <div className="flex-1">
-                    <span className={isSelected ? "text-white" : "text-gray-400"}>
-                      {dataset.name}
-                    </span>
-                    <span className="text-gray-500 text-sm ml-2">
-                      ({dataset.jsonFileCount} files)
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+
+          {/* JSON Datasets */}
+          {datasets.length > 0 && (
+            <div className="mb-3">
+              <p className="text-xs text-blue-400 mb-2">JSON Datasets</p>
+              <div className="space-y-2">
+                {datasets.map((dataset) => {
+                  const seqNum = getSequenceNumber(dataset.name);
+                  const isSelected = seqNum !== null;
+                  return (
+                    <div
+                      key={dataset.name}
+                      onClick={() => handleDatasetClick(dataset.name)}
+                      className={`flex items-center gap-3 p-3 rounded cursor-pointer transition-all ${
+                        isSelected
+                          ? "bg-blue-900/50 border-2 border-blue-500"
+                          : "bg-gray-800 border-2 border-transparent hover:border-gray-600"
+                      }`}
+                    >
+                      <div
+                        className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${
+                          isSelected
+                            ? "bg-blue-600 text-white"
+                            : "bg-gray-700 text-gray-500"
+                        }`}
+                      >
+                        {seqNum || "-"}
+                      </div>
+                      <div className="flex-1">
+                        <span className={isSelected ? "text-white" : "text-gray-400"}>
+                          {dataset.name}
+                        </span>
+                        <span className="text-gray-500 text-sm ml-2">
+                          ({dataset.jsonFileCount} files)
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Text Datasets */}
+          {textDatasets.length > 0 && (
+            <div className="mb-3">
+              <p className="text-xs text-green-400 mb-2">Text Datasets</p>
+              <div className="space-y-2">
+                {textDatasets.map((dataset) => {
+                  const textId = `text:${dataset.name}`;
+                  const seqNum = getSequenceNumber(textId);
+                  const isSelected = seqNum !== null;
+                  return (
+                    <div
+                      key={textId}
+                      onClick={() => handleDatasetClick(textId)}
+                      className={`flex items-center gap-3 p-3 rounded cursor-pointer transition-all ${
+                        isSelected
+                          ? "bg-green-900/50 border-2 border-green-500"
+                          : "bg-gray-800 border-2 border-transparent hover:border-gray-600"
+                      }`}
+                    >
+                      <div
+                        className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${
+                          isSelected
+                            ? "bg-green-600 text-white"
+                            : "bg-gray-700 text-gray-500"
+                        }`}
+                      >
+                        {seqNum || "-"}
+                      </div>
+                      <div className="flex-1">
+                        <span className={isSelected ? "text-white" : "text-gray-400"}>
+                          {dataset.name}
+                        </span>
+                        <span className="text-green-500 text-xs ml-2 bg-green-900/50 px-1.5 py-0.5 rounded">
+                          TEXT
+                        </span>
+                        <span className="text-gray-500 text-sm ml-2">
+                          ({dataset.sampleCount} samples)
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Training Sequence Stack */}
           {config.datasets.length > 0 && (
             <div className="mt-4 p-4 bg-gray-800 rounded-lg border border-gray-700">
               <p className="text-sm text-gray-400 mb-3">Training Order:</p>
               <div className="flex flex-col gap-1">
-                {config.datasets.map((datasetName, index) => (
-                  <div
-                    key={datasetName}
-                    className="flex items-center gap-2 p-2 bg-gray-900 rounded"
-                    style={{ marginLeft: `${index * 8}px` }}
-                  >
-                    <span className="text-blue-400 font-mono text-sm w-6">
-                      {index + 1}.
-                    </span>
-                    <span className="text-white text-sm">{datasetName}</span>
-                    {index < config.datasets.length - 1 && (
-                      <span className="text-gray-600 ml-auto">→</span>
-                    )}
-                  </div>
-                ))}
+                {config.datasets.map((datasetId, index) => {
+                  const isText = datasetId.startsWith("text:");
+                  const displayName = isText ? datasetId.substring(5) : datasetId;
+                  return (
+                    <div
+                      key={datasetId}
+                      className="flex items-center gap-2 p-2 bg-gray-900 rounded"
+                      style={{ marginLeft: `${index * 8}px` }}
+                    >
+                      <span className={`font-mono text-sm w-6 ${isText ? "text-green-400" : "text-blue-400"}`}>
+                        {index + 1}.
+                      </span>
+                      <span className="text-white text-sm">{displayName}</span>
+                      {isText && (
+                        <span className="text-xs bg-green-600 px-1.5 py-0.5 rounded">TEXT</span>
+                      )}
+                      {index < config.datasets.length - 1 && (
+                        <span className="text-gray-600 ml-auto">→</span>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
               <p className="text-xs text-gray-500 mt-3">
-                BASE → {config.datasets.join(" → ")} → OUTPUT
+                BASE → {config.datasets.map(d => d.startsWith("text:") ? d.substring(5) : d).join(" → ")} → OUTPUT
               </p>
             </div>
           )}

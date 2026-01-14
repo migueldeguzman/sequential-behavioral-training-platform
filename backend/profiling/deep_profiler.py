@@ -308,15 +308,7 @@ class DeepAttentionProfiler:
         Returns:
             Instrumented forward method
         """
-        def instrumented_forward(
-            hidden_states,
-            attention_mask=None,
-            position_ids=None,
-            past_key_value=None,
-            output_attentions=False,
-            use_cache=False,
-            **kwargs
-        ):
+        def instrumented_forward(*args, **kwargs):
             metrics = AttentionOperationMetrics()
             total_start = time.perf_counter()
 
@@ -325,17 +317,14 @@ class DeepAttentionProfiler:
                 if torch.backends.mps.is_available():
                     torch.mps.synchronize()
 
-                # Call original forward and capture timing
+                # Extract output_attentions from kwargs to modify it
+                original_output_attentions = kwargs.get('output_attentions', False)
+
                 # Request attention weights to compute extra metrics (EP-015)
-                result = original_forward(
-                    hidden_states,
-                    attention_mask=attention_mask,
-                    position_ids=position_ids,
-                    past_key_value=past_key_value,
-                    output_attentions=True,  # Always request attention weights for metrics
-                    use_cache=use_cache,
-                    **kwargs
-                )
+                kwargs['output_attentions'] = True
+
+                # Call original forward with all arguments passed through
+                result = original_forward(*args, **kwargs)
 
                 # Sync after
                 if torch.backends.mps.is_available():
@@ -373,23 +362,16 @@ class DeepAttentionProfiler:
                 self.metrics_storage.metrics.append(metrics)
 
                 # Return original result format (respect output_attentions parameter)
-                if not output_attentions and isinstance(result, tuple) and len(result) >= 2:
+                if not original_output_attentions and isinstance(result, tuple) and len(result) >= 2:
                     # User didn't request attention weights, return without them
                     return (result[0],) + result[2:] if len(result) > 2 else result[0]
 
                 return result
 
             except Exception as e:
-                # Fallback to original
-                return original_forward(
-                    hidden_states,
-                    attention_mask=attention_mask,
-                    position_ids=position_ids,
-                    past_key_value=past_key_value,
-                    output_attentions=output_attentions,
-                    use_cache=use_cache,
-                    **kwargs
-                )
+                # Fallback to original - restore original output_attentions
+                kwargs['output_attentions'] = original_output_attentions
+                return original_forward(*args, **kwargs)
 
         return instrumented_forward
 
@@ -436,7 +418,9 @@ class DeepAttentionProfiler:
         Returns:
             Instrumented forward method
         """
-        def instrumented_forward(hidden_states):
+        def instrumented_forward(*args, **kwargs):
+            # Extract hidden_states from args (should be first argument)
+            hidden_states = args[0] if args else kwargs.get('hidden_states')
             metrics = MLPOperationMetrics()
 
             # Start total timing
@@ -501,7 +485,7 @@ class DeepAttentionProfiler:
 
                 else:
                     # Fallback: just call original and time total
-                    output = original_forward(hidden_states)
+                    output = original_forward(*args, **kwargs)
 
                 if torch.backends.mps.is_available():
                     torch.mps.synchronize()
@@ -519,7 +503,7 @@ class DeepAttentionProfiler:
 
             except Exception as e:
                 # If profiling fails, fall back to original behavior
-                return original_forward(hidden_states)
+                return original_forward(*args, **kwargs)
 
         return instrumented_forward
 
@@ -568,7 +552,9 @@ class DeepAttentionProfiler:
         Returns:
             Instrumented forward method
         """
-        def instrumented_forward(hidden_states):
+        def instrumented_forward(*args, **kwargs):
+            # Extract hidden_states from args (should be first argument)
+            hidden_states = args[0] if args else kwargs.get('hidden_states')
             metrics = LayerNormOperationMetrics()
 
             # Start total timing
@@ -642,7 +628,7 @@ class DeepAttentionProfiler:
 
                 else:
                     # Fallback: just call original and time total
-                    output = original_forward(hidden_states)
+                    output = original_forward(*args, **kwargs)
 
                 if torch.backends.mps.is_available():
                     torch.mps.synchronize()
@@ -660,7 +646,7 @@ class DeepAttentionProfiler:
 
             except Exception as e:
                 # If profiling fails, fall back to original behavior
-                return original_forward(hidden_states)
+                return original_forward(*args, **kwargs)
 
         return instrumented_forward
 

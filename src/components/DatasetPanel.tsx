@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import type { Dataset, ConversionJob } from "@/types";
-import { datasetApi, filesApi } from "@/lib/api";
+import type { Dataset, TextDataset, ConversionJob } from "@/types";
+import { datasetApi, filesApi, textDatasetsApi } from "@/lib/api";
 
 interface DatasetPanelProps {
   onDatasetsChange?: (datasets: Dataset[]) => void;
@@ -66,6 +66,18 @@ export default function DatasetPanel({ onDatasetsChange, onRefresh }: DatasetPan
   const [batchConverting, setBatchConverting] = useState(false);
   const [batchFormatStyle, setBatchFormatStyle] = useState<"chat" | "simple" | "instruction" | "plain">("chat");
 
+  // Text datasets state
+  const [textDatasets, setTextDatasets] = useState<TextDataset[]>([]);
+  const [textPreviewData, setTextPreviewData] = useState<{
+    fileName: string;
+    filePath: string;
+    fileSize: string;
+    totalSamples: number;
+    previewSamples: string[];
+    format: string;
+  } | null>(null);
+  const [activeTab, setActiveTab] = useState<"json" | "text">("json");
+
   const fetchDatasets = useCallback(async () => {
     setLoading(true);
     const response = await datasetApi.list();
@@ -85,10 +97,18 @@ export default function DatasetPanel({ onDatasetsChange, onRefresh }: DatasetPan
     }
   }, []);
 
+  const fetchTextDatasets = useCallback(async () => {
+    const response = await textDatasetsApi.list();
+    if (response.success && response.data) {
+      setTextDatasets(response.data);
+    }
+  }, []);
+
   useEffect(() => {
     fetchDatasets();
     fetchConvertedFiles();
-  }, [fetchDatasets, fetchConvertedFiles]);
+    fetchTextDatasets();
+  }, [fetchDatasets, fetchConvertedFiles, fetchTextDatasets]);
 
   const handleConvert = async () => {
     if (!conversionConfig) return;
@@ -130,6 +150,15 @@ export default function DatasetPanel({ onDatasetsChange, onRefresh }: DatasetPan
       setFormatInfo(response.data);
     } else {
       setError(response.error || "Failed to load format info");
+    }
+  };
+
+  const handleTextPreview = async (datasetName: string) => {
+    const response = await textDatasetsApi.preview(datasetName);
+    if (response.success && response.data) {
+      setTextPreviewData(response.data);
+    } else {
+      setError(response.error || "Failed to load text preview");
     }
   };
 
@@ -217,21 +246,23 @@ export default function DatasetPanel({ onDatasetsChange, onRefresh }: DatasetPan
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-xl font-bold">Dataset Management</h2>
           <div className="flex gap-2">
-            <button
-              onClick={() => {
-                setBatchConvertMode(!batchConvertMode);
-                if (batchConvertMode) {
-                  setBatchSelections(new Set());
-                }
-              }}
-              className={`px-3 py-1 text-sm rounded ${
-                batchConvertMode
-                  ? "bg-orange-600 hover:bg-orange-500"
-                  : "bg-orange-700 hover:bg-orange-600"
-              }`}
-            >
-              {batchConvertMode ? "Cancel Batch" : "Batch Convert"}
-            </button>
+            {activeTab === "json" && (
+              <button
+                onClick={() => {
+                  setBatchConvertMode(!batchConvertMode);
+                  if (batchConvertMode) {
+                    setBatchSelections(new Set());
+                  }
+                }}
+                className={`px-3 py-1 text-sm rounded ${
+                  batchConvertMode
+                    ? "bg-orange-600 hover:bg-orange-500"
+                    : "bg-orange-700 hover:bg-orange-600"
+                }`}
+              >
+                {batchConvertMode ? "Cancel Batch" : "Batch Convert"}
+              </button>
+            )}
             <button
               onClick={() => setShowFileBrowser(!showFileBrowser)}
               className="px-3 py-1 text-sm bg-purple-600 hover:bg-purple-500 rounded"
@@ -239,12 +270,39 @@ export default function DatasetPanel({ onDatasetsChange, onRefresh }: DatasetPan
               {showFileBrowser ? "Hide" : "Browse"} Files
             </button>
             <button
-              onClick={fetchDatasets}
+              onClick={() => {
+                fetchDatasets();
+                fetchTextDatasets();
+              }}
               className="px-3 py-1 text-sm bg-gray-700 hover:bg-gray-600 rounded"
             >
               Refresh
             </button>
           </div>
+        </div>
+
+        {/* Tab Navigation */}
+        <div className="flex gap-2 mb-4 border-b border-gray-700 pb-2">
+          <button
+            onClick={() => setActiveTab("json")}
+            className={`px-4 py-2 rounded-t text-sm font-medium ${
+              activeTab === "json"
+                ? "bg-blue-600 text-white"
+                : "bg-gray-800 text-gray-400 hover:text-white"
+            }`}
+          >
+            JSON Datasets ({datasets.length})
+          </button>
+          <button
+            onClick={() => setActiveTab("text")}
+            className={`px-4 py-2 rounded-t text-sm font-medium ${
+              activeTab === "text"
+                ? "bg-green-600 text-white"
+                : "bg-gray-800 text-gray-400 hover:text-white"
+            }`}
+          >
+            Text Datasets ({textDatasets.length})
+          </button>
         </div>
 
         {/* Batch Conversion Controls */}
@@ -291,82 +349,132 @@ export default function DatasetPanel({ onDatasetsChange, onRefresh }: DatasetPan
           </div>
         )}
 
-        <div className="space-y-3">
-          {datasets.map((dataset) => (
-            <div
-              key={dataset.name}
-              onClick={() => batchConvertMode && toggleBatchSelection(dataset.name)}
-              className={`p-4 bg-gray-800 rounded-lg border transition-colors ${
-                batchConvertMode
-                  ? batchSelections.has(dataset.name)
-                    ? "border-orange-500 bg-orange-900/20 cursor-pointer"
-                    : "border-gray-700 cursor-pointer hover:border-gray-500"
-                  : "border-gray-700"
-              }`}
-            >
-              <div className="flex justify-between items-start">
-                <div className="flex items-start gap-3">
-                  {batchConvertMode && (
-                    <div
-                      className={`w-5 h-5 mt-1 rounded border-2 flex items-center justify-center ${
-                        batchSelections.has(dataset.name)
-                          ? "border-orange-500 bg-orange-500"
-                          : "border-gray-500"
-                      }`}
-                    >
-                      {batchSelections.has(dataset.name) && (
-                        <span className="text-white text-xs">v</span>
+        {/* JSON Datasets Tab */}
+        {activeTab === "json" && (
+          <div className="space-y-3">
+            {datasets.map((dataset) => (
+              <div
+                key={dataset.name}
+                onClick={() => batchConvertMode && toggleBatchSelection(dataset.name)}
+                className={`p-4 bg-gray-800 rounded-lg border transition-colors ${
+                  batchConvertMode
+                    ? batchSelections.has(dataset.name)
+                      ? "border-orange-500 bg-orange-900/20 cursor-pointer"
+                      : "border-gray-700 cursor-pointer hover:border-gray-500"
+                    : "border-gray-700"
+                }`}
+              >
+                <div className="flex justify-between items-start">
+                  <div className="flex items-start gap-3">
+                    {batchConvertMode && (
+                      <div
+                        className={`w-5 h-5 mt-1 rounded border-2 flex items-center justify-center ${
+                          batchSelections.has(dataset.name)
+                            ? "border-orange-500 bg-orange-500"
+                            : "border-gray-500"
+                        }`}
+                      >
+                        {batchSelections.has(dataset.name) && (
+                          <span className="text-white text-xs">v</span>
+                        )}
+                      </div>
+                    )}
+                    <div>
+                      <h3 className="font-semibold text-lg">{dataset.name}</h3>
+                      <p className="text-gray-400 text-sm">
+                        {dataset.jsonFileCount} JSON files
+                        {dataset.pairCount && ` | ${dataset.pairCount} pairs`}
+                      </p>
+                      {dataset.textFileExists && (
+                        <p className="text-green-400 text-sm mt-1">
+                          Text file available
+                        </p>
                       )}
                     </div>
-                  )}
-                  <div>
-                    <h3 className="font-semibold text-lg">{dataset.name}</h3>
-                    <p className="text-gray-400 text-sm">
-                      {dataset.jsonFileCount} JSON files
-                      {dataset.pairCount && ` | ${dataset.pairCount} pairs`}
-                    </p>
-                    {dataset.textFileExists && (
-                      <p className="text-green-400 text-sm mt-1">
-                        Text file available
-                      </p>
-                    )}
                   </div>
-                </div>
-                {!batchConvertMode && (
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => handleShowFormat(dataset.name)}
-                      className="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-sm"
-                    >
-                      Format
-                    </button>
-                    {dataset.textFileExists && (
+                  {!batchConvertMode && (
+                    <div className="flex gap-2">
                       <button
-                        onClick={() => handlePreview(dataset.name)}
+                        onClick={() => handleShowFormat(dataset.name)}
                         className="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-sm"
                       >
-                        Preview
+                        Format
                       </button>
-                    )}
+                      {dataset.textFileExists && (
+                        <button
+                          onClick={() => handlePreview(dataset.name)}
+                          className="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-sm"
+                        >
+                          Preview
+                        </button>
+                      )}
+                      <button
+                        onClick={() =>
+                          setConversionConfig({
+                            datasetName: dataset.name,
+                            pairCount: "",
+                            formatStyle: "chat",
+                          })
+                        }
+                        disabled={converting === dataset.name}
+                        className="px-3 py-1 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 rounded text-sm"
+                      >
+                        {converting === dataset.name ? "Converting..." : "Convert"}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+            {datasets.length === 0 && (
+              <p className="text-gray-400 text-center py-4">No JSON datasets found</p>
+            )}
+          </div>
+        )}
+
+        {/* Text Datasets Tab */}
+        {activeTab === "text" && (
+          <div className="space-y-3">
+            <p className="text-sm text-gray-400 mb-3">
+              Standalone text files that can be used directly for training. Use prefix &quot;text:&quot; when adding to training sequence.
+            </p>
+            {textDatasets.map((dataset) => (
+              <div
+                key={dataset.name}
+                className="p-4 bg-gray-800 rounded-lg border border-gray-700"
+              >
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h3 className="font-semibold text-lg flex items-center gap-2">
+                      {dataset.name}
+                      <span className="text-xs bg-green-600 px-2 py-0.5 rounded">TEXT</span>
+                    </h3>
+                    <p className="text-gray-400 text-sm">
+                      {dataset.fileSize} | {dataset.sampleCount} samples
+                    </p>
+                    <p className="text-gray-500 text-xs mt-1">
+                      Modified: {new Date(dataset.modifiedAt).toLocaleString()}
+                    </p>
+                    <p className="text-blue-400 text-xs mt-1 font-mono">
+                      Training ID: text:{dataset.name}
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
                     <button
-                      onClick={() =>
-                        setConversionConfig({
-                          datasetName: dataset.name,
-                          pairCount: "",
-                          formatStyle: "chat",
-                        })
-                      }
-                      disabled={converting === dataset.name}
-                      className="px-3 py-1 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 rounded text-sm"
+                      onClick={() => handleTextPreview(dataset.name)}
+                      className="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-sm"
                     >
-                      {converting === dataset.name ? "Converting..." : "Convert"}
+                      Preview
                     </button>
                   </div>
-                )}
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+            {textDatasets.length === 0 && (
+              <p className="text-gray-400 text-center py-4">No text datasets found</p>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Converted Files Browser */}
@@ -474,6 +582,39 @@ export default function DatasetPanel({ onDatasetsChange, onRefresh }: DatasetPan
             <div className="flex justify-end mt-6">
               <button
                 onClick={() => setPreviewData(null)}
+                className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Text Dataset Preview Modal */}
+      {textPreviewData && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-lg p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto">
+            <h3 className="text-lg font-bold mb-2 flex items-center gap-2">
+              {textPreviewData.fileName}
+              <span className="text-xs bg-green-600 px-2 py-0.5 rounded">TEXT</span>
+            </h3>
+            <p className="text-sm text-gray-400 mb-4">
+              {textPreviewData.fileSize} | {textPreviewData.totalSamples} total samples | Format: {textPreviewData.format}
+            </p>
+
+            <div className="space-y-3">
+              {textPreviewData.previewSamples.map((sample, index) => (
+                <div key={index} className="p-3 bg-gray-900 rounded">
+                  <p className="text-sm text-gray-400 mb-1">Sample {index + 1}:</p>
+                  <pre className="text-sm whitespace-pre-wrap max-h-48 overflow-y-auto">{sample.substring(0, 500)}{sample.length > 500 ? "..." : ""}</pre>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex justify-end mt-6">
+              <button
+                onClick={() => setTextPreviewData(null)}
                 className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded"
               >
                 Close

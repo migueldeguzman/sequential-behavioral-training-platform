@@ -1,5 +1,6 @@
 import type {
   Dataset,
+  TextDataset,
   TrainingConfig,
   TrainingStatus,
   ModelCheckpoint,
@@ -115,6 +116,23 @@ export const filesApi = {
       pairs: string[];
       hasMore: boolean;
     }>(`/api/files/content?path=${encodeURIComponent(path)}&offset=${offset}&limit=${limit}`),
+};
+
+// Text Datasets API (standalone .text files)
+export const textDatasetsApi = {
+  list: () => fetchApi<TextDataset[]>("/api/text-datasets"),
+
+  getDetails: (name: string) => fetchApi<TextDataset>(`/api/text-datasets/${name}`),
+
+  preview: (name: string, limit = 3) =>
+    fetchApi<{
+      fileName: string;
+      filePath: string;
+      fileSize: string;
+      totalSamples: number;
+      previewSamples: string[];
+      format: string;
+    }>(`/api/text-datasets/${name}/preview?limit=${limit}`),
 };
 
 // Training API

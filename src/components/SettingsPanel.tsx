@@ -8,6 +8,7 @@ export default function SettingsPanel() {
   const [settings, setSettings] = useState<Settings>({
     jsonInputDir: "",
     textOutputDir: "",
+    textDatasetsDir: "",
     modelOutputDir: "",
     baseModelPath: "",
     pipelineScript: "",
@@ -83,6 +84,7 @@ export default function SettingsPanel() {
   const fieldLabels: Record<keyof Settings, string> = {
     jsonInputDir: "JSON Datasets Directory",
     textOutputDir: "Text Output Directory",
+    textDatasetsDir: "Text Datasets Directory",
     modelOutputDir: "Model Output Directory",
     baseModelPath: "Base Model Path",
     pipelineScript: "Pipeline Script Path",
@@ -91,6 +93,7 @@ export default function SettingsPanel() {
   const fieldDescriptions: Record<keyof Settings, string> = {
     jsonInputDir: "Directory containing JSON Q&A pair folders",
     textOutputDir: "Directory where converted .text files are saved",
+    textDatasetsDir: "Directory containing standalone .text files for training",
     modelOutputDir: "Directory where trained models are saved",
     baseModelPath: "Path to the base model (e.g., zephyr)",
     pipelineScript: "Path to instruction_tuning_pipeline.py",

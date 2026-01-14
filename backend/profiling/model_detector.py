@@ -9,6 +9,7 @@ Supported architectures:
 - Mistral (mistralai/Mistral-*, etc.)
 - Phi (microsoft/phi-*, etc.)
 - Qwen (Qwen/Qwen-*, etc.)
+- Gemma (google/gemma-*, etc.)
 
 Usage:
     detector = ModelArchitectureDetector(model)
@@ -91,6 +92,8 @@ class ModelArchitectureDetector:
             return self._detect_phi()
         elif model_type == 'qwen2' or self._is_qwen_structure():
             return self._detect_qwen()
+        elif model_type == 'gemma' or model_type == 'gemma2' or self._is_gemma_structure():
+            return self._detect_gemma()
         else:
             logger.warning(
                 f"Unknown architecture (model_type={model_type}). "
@@ -137,6 +140,20 @@ class ModelArchitectureDetector:
         """Check if model has Qwen-like structure."""
         try:
             # Qwen2 uses similar structure to Llama
+            return (
+                hasattr(self.model, 'model') and
+                hasattr(self.model.model, 'layers') and
+                len(self.model.model.layers) > 0 and
+                hasattr(self.model.model.layers[0], 'self_attn') and
+                hasattr(self.model.model.layers[0], 'mlp')
+            )
+        except (AttributeError, IndexError):
+            return False
+
+    def _is_gemma_structure(self) -> bool:
+        """Check if model has Gemma-like structure."""
+        try:
+            # Gemma uses similar structure to Llama but may have subtle differences
             return (
                 hasattr(self.model, 'model') and
                 hasattr(self.model.model, 'layers') and
@@ -246,6 +263,30 @@ class ModelArchitectureDetector:
         # Qwen2 uses similar structure to Llama
         return ComponentPaths(
             architecture="qwen",
+            num_layers=num_layers,
+            layers_path="model.layers",
+            q_proj="self_attn.q_proj",
+            k_proj="self_attn.k_proj",
+            v_proj="self_attn.v_proj",
+            o_proj="self_attn.o_proj",
+            gate_proj="mlp.gate_proj",
+            up_proj="mlp.up_proj",
+            down_proj="mlp.down_proj",
+            input_layernorm="input_layernorm",
+            post_attention_layernorm="post_attention_layernorm",
+            norm_type="rmsnorm"
+        )
+
+    def _detect_gemma(self) -> ComponentPaths:
+        """Detect Gemma architecture and return component paths."""
+        num_layers = len(self.model.model.layers)
+
+        logger.info(f"Detected Gemma architecture with {num_layers} layers")
+
+        # Gemma (including Gemma 2 and Gemma 3) uses similar structure to Llama
+        # with RMSNorm and the same component naming
+        return ComponentPaths(
+            architecture="gemma",
             num_layers=num_layers,
             layers_path="model.layers",
             q_proj="self_attn.q_proj",

@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback, lazy, Suspense } from "react";
-import type { Dataset, TrainingConfig, AuthState } from "@/types";
+import type { Dataset, TextDataset, TrainingConfig, AuthState } from "@/types";
 import { loadAuth, clearAuth } from "@/lib/storage";
-import { authApi, trainingApi, datasetApi } from "@/lib/api";
+import { authApi, trainingApi, datasetApi, textDatasetsApi } from "@/lib/api";
 
 import LoginForm from "@/components/LoginForm";
 import DatasetPanel from "@/components/DatasetPanel";
@@ -25,6 +25,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabType>("training");
   const [datasets, setDatasets] = useState<Dataset[]>([]);
+  const [textDatasets, setTextDatasets] = useState<TextDataset[]>([]);
   const [isTraining, setIsTraining] = useState(false);
 
   // Fetch datasets at page level so they're always available
@@ -32,6 +33,13 @@ export default function Home() {
     const response = await datasetApi.list();
     if (response.success && response.data) {
       setDatasets(response.data);
+    }
+  }, []);
+
+  const fetchTextDatasets = useCallback(async () => {
+    const response = await textDatasetsApi.list();
+    if (response.success && response.data) {
+      setTextDatasets(response.data);
     }
   }, []);
 
@@ -55,8 +63,9 @@ export default function Home() {
   useEffect(() => {
     if (auth) {
       fetchDatasets();
+      fetchTextDatasets();
     }
-  }, [auth, fetchDatasets]);
+  }, [auth, fetchDatasets, fetchTextDatasets]);
 
   useEffect(() => {
     const checkTrainingStatus = async () => {
@@ -178,6 +187,7 @@ export default function Home() {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <TrainingConfigPanel
                 datasets={datasets}
+                textDatasets={textDatasets}
                 onStartTraining={handleStartTraining}
                 disabled={isTraining}
               />

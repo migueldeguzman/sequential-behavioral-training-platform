@@ -3355,3 +3355,19 @@ Notes:
 - Note: On Apple Silicon, options more limited than NVIDIA (no TensorRT-LLM, DeepSpeed)
 - Future work: Add engine efficiency ranking UI component, cross-engine comparison charts
 
+2026-01-14 - EP-097 - COMPLETE - Gemma 3 Model Architecture Support
+- Fixed DeepProfiler instrumented forwards to accept flexible *args, **kwargs for compatibility
+- Updated _create_detailed_instrumented_forward to use *args, **kwargs instead of fixed signature
+- Updated _create_instrumented_mlp_forward to accept *args, **kwargs for all MLP architectures
+- Updated _create_instrumented_layernorm_forward to accept *args, **kwargs for all LayerNorm implementations
+- Added Gemma architecture detection to ModelArchitectureDetector (_is_gemma_structure method)
+- Added _detect_gemma() method returning ComponentPaths for Gemma models
+- Supports gemma, gemma2, and gemma3 model_type detection
+- Gemma uses Llama-like structure with RMSNorm and same component naming (self_attn.q_proj, mlp.gate_proj, etc.)
+- Fixed error: Linear.forward() got an unexpected keyword argument 'attention_mask'
+- Root cause: Fixed forward signature wasn't compatible with different attention implementations
+- Solution: Generic *args, **kwargs pattern allows any model architecture to work with profiler
+- Verified Python syntax compilation with py_compile
+- All instrumented forwards now pass through arguments transparently to original implementations
+- Gemma 3 models can now be profiled with both 'module' and 'deep' profiling depths
+

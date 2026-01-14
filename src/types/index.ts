@@ -7,6 +7,16 @@ export interface Dataset {
   pairCount?: number;
 }
 
+// Text dataset (standalone .text files)
+export interface TextDataset {
+  name: string;
+  filePath: string;
+  fileSize: string;
+  sampleCount: number;
+  modifiedAt: string;
+  datasetType: "text";
+}
+
 // Training configuration
 export interface TrainingConfig {
   datasets: string[];
@@ -63,6 +73,7 @@ export interface ConversionJob {
 export interface Settings {
   jsonInputDir: string;
   textOutputDir: string;
+  textDatasetsDir: string;
   modelOutputDir: string;
   baseModelPath: string;
   pipelineScript: string;

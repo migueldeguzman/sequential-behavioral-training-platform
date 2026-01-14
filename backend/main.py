@@ -40,6 +40,7 @@ LOGS_DIR = CONFIG_DIR / "training_logs"
 DEFAULT_SETTINGS = {
     "jsonInputDir": "/Users/miguelitodeguzman/Projects/SDB/output",
     "textOutputDir": "/Users/miguelitodeguzman/Projects/SDB/datasets-from-json",
+    "textDatasetsDir": "/Users/miguelitodeguzman/Projects/SDB/text-datasets",
     "modelOutputDir": "/Users/miguelitodeguzman/Projects/SDB/trained-models",
     "baseModelPath": "/Users/miguelitodeguzman/Projects/baseModels/zephyr",
     "pipelineScript": "/Users/miguelitodeguzman/Projects/SDB/instruction_tuning_pipeline.py",
@@ -71,6 +72,7 @@ def get_paths():
     return {
         "json_input": Path(settings["jsonInputDir"]),
         "text_output": Path(settings["textOutputDir"]),
+        "text_datasets": Path(settings["textDatasetsDir"]),
         "model_output": Path(settings["modelOutputDir"]),
         "base_model": Path(settings["baseModelPath"]),
         "pipeline": Path(settings["pipelineScript"]),
@@ -132,6 +134,15 @@ class Dataset(BaseModel):
     pairCount: Optional[int] = None
 
 
+class TextDataset(BaseModel):
+    name: str
+    filePath: str
+    fileSize: str
+    sampleCount: int
+    modifiedAt: str
+    datasetType: str = "text"  # Always "text" for standalone text files
+
+
 class ConversionJob(BaseModel):
     datasetName: str
     pairCount: Optional[int] = None
@@ -139,6 +150,9 @@ class ConversionJob(BaseModel):
 
 
 class TrainingConfig(BaseModel):
+    # datasets can include both JSON and text datasets
+    # Prefix with "text:" for standalone text datasets (e.g., "text:alignment")
+    # No prefix for JSON datasets (e.g., "SLSEdefense_version7")
     datasets: list[str]
     epochs: float = 1.0
     learningRate: float = 0.000042
@@ -174,6 +188,7 @@ class ModelCheckpoint(BaseModel):
 class Settings(BaseModel):
     jsonInputDir: str
     textOutputDir: str
+    textDatasetsDir: str
     modelOutputDir: str
     baseModelPath: str
     pipelineScript: str
@@ -254,7 +269,7 @@ def get_training_log_detail(job_id: str) -> dict:
 async def lifespan(app: FastAPI):
     # Startup - create directories
     paths = get_paths()
-    for key in ["json_input", "text_output", "model_output"]:
+    for key in ["json_input", "text_output", "text_datasets", "model_output"]:
         paths[key].mkdir(parents=True, exist_ok=True)
     LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -371,6 +386,7 @@ async def update_settings(settings: Settings):
 
     # Create output directories if they don't exist
     Path(settings_dict["textOutputDir"]).mkdir(parents=True, exist_ok=True)
+    Path(settings_dict["textDatasetsDir"]).mkdir(parents=True, exist_ok=True)
     Path(settings_dict["modelOutputDir"]).mkdir(parents=True, exist_ok=True)
 
     save_settings(settings_dict)
@@ -618,6 +634,128 @@ async def get_file_content(path: str = Query(...), offset: int = 0, limit: int =
     }
 
 
+# Text datasets endpoints (standalone .text files)
+@app.get("/api/text-datasets", response_model=list[TextDataset])
+async def list_text_datasets():
+    """List all standalone text datasets."""
+    paths = get_paths()
+    datasets = []
+
+    if paths["text_datasets"].exists():
+        for text_file in paths["text_datasets"].glob("*.text"):
+            try:
+                stat = text_file.stat()
+                size = stat.st_size
+                size_str = f"{size / 1024:.1f} KB" if size < 1e6 else f"{size / (1024*1024):.2f} MB"
+
+                # Detect separator and count samples
+                with open(text_file, 'r', encoding='utf-8') as f:
+                    content = f.read()
+
+                if '<|endoftext|>' in content:
+                    sample_count = len([s for s in content.split('<|endoftext|>') if s.strip()])
+                elif '===END_OF_STORY===' in content:
+                    sample_count = len([s for s in content.split('===END_OF_STORY===') if s.strip()])
+                elif 'END_OF_STORY' in content:
+                    sample_count = len([s for s in content.split('END_OF_STORY') if s.strip()])
+                elif '---' in content and content.count('---') > 3:
+                    sample_count = len([s for s in content.split('---') if s.strip()])
+                else:
+                    sample_count = 1  # Treat as continuous text
+
+                datasets.append(TextDataset(
+                    name=text_file.stem,  # filename without extension
+                    filePath=str(text_file),
+                    fileSize=size_str,
+                    sampleCount=sample_count,
+                    modifiedAt=datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                ))
+            except Exception:
+                continue
+
+    return sorted(datasets, key=lambda x: x.name)
+
+
+@app.get("/api/text-datasets/{name}")
+async def get_text_dataset(name: str):
+    """Get details of a specific text dataset."""
+    paths = get_paths()
+    text_file = paths["text_datasets"] / f"{name}.text"
+
+    if not text_file.exists():
+        raise HTTPException(status_code=404, detail="Text dataset not found")
+
+    stat = text_file.stat()
+    size = stat.st_size
+    size_str = f"{size / 1024:.1f} KB" if size < 1e6 else f"{size / (1024*1024):.2f} MB"
+
+    with open(text_file, 'r', encoding='utf-8') as f:
+        content = f.read()
+
+    # Detect separator and count samples
+    if '<|endoftext|>' in content:
+        sample_count = len([s for s in content.split('<|endoftext|>') if s.strip()])
+    elif '===END_OF_STORY===' in content:
+        sample_count = len([s for s in content.split('===END_OF_STORY===') if s.strip()])
+    elif 'END_OF_STORY' in content:
+        sample_count = len([s for s in content.split('END_OF_STORY') if s.strip()])
+    elif '---' in content and content.count('---') > 3:
+        sample_count = len([s for s in content.split('---') if s.strip()])
+    else:
+        sample_count = 1  # Treat as continuous text
+
+    return TextDataset(
+        name=name,
+        filePath=str(text_file),
+        fileSize=size_str,
+        sampleCount=sample_count,
+        modifiedAt=datetime.fromtimestamp(stat.st_mtime).isoformat(),
+    )
+
+
+@app.get("/api/text-datasets/{name}/preview")
+async def preview_text_dataset(name: str, limit: int = 3):
+    """Preview samples from a text dataset."""
+    paths = get_paths()
+    text_file = paths["text_datasets"] / f"{name}.text"
+
+    if not text_file.exists():
+        raise HTTPException(status_code=404, detail="Text dataset not found")
+
+    with open(text_file, 'r', encoding='utf-8') as f:
+        content = f.read()
+
+    # Detect separator and split
+    if '<|endoftext|>' in content:
+        samples = [s.strip() for s in content.split('<|endoftext|>') if s.strip()]
+        format_str = "<|endoftext|> separated"
+    elif '===END_OF_STORY===' in content:
+        samples = [s.strip() for s in content.split('===END_OF_STORY===') if s.strip()]
+        format_str = "===END_OF_STORY=== separated"
+    elif 'END_OF_STORY' in content:
+        samples = [s.strip() for s in content.split('END_OF_STORY') if s.strip()]
+        format_str = "END_OF_STORY separated"
+    elif '---' in content and content.count('---') > 3:
+        samples = [s.strip() for s in content.split('---') if s.strip()]
+        format_str = "--- separated"
+    else:
+        samples = [content.strip()]
+        format_str = "continuous text"
+
+    stat = text_file.stat()
+    size = stat.st_size
+    size_str = f"{size / 1024:.1f} KB" if size < 1e6 else f"{size / (1024*1024):.2f} MB"
+
+    return {
+        "fileName": text_file.name,
+        "filePath": str(text_file),
+        "fileSize": size_str,
+        "totalSamples": len(samples),
+        "previewSamples": samples[:limit],
+        "format": format_str
+    }
+
+
 # Training endpoints
 @app.get("/api/training/status", response_model=TrainingStatus)
 async def get_training_status():
@@ -688,43 +826,62 @@ async def run_training(config: TrainingConfig, job_id: str):
         # Track current model path for sequential training (model chaining)
         current_model_path = str(paths["base_model"])
 
+        # Get base model name for checkpoint naming
+        base_model_name = paths["base_model"].name
+
         # Process each dataset
-        for i, dataset_name in enumerate(config.datasets):
+        for i, dataset_entry in enumerate(config.datasets):
             if not training_state["is_running"]:
                 status = "stopped"
                 break
 
+            # Determine dataset type and name
+            # Prefix "text:" indicates standalone text dataset
+            is_text_dataset = dataset_entry.startswith("text:")
+            dataset_name = dataset_entry[5:] if is_text_dataset else dataset_entry
+
             training_state["current_dataset"] = dataset_name
-            await broadcast_log("info", f"Processing dataset {i+1}/{len(config.datasets)}: {dataset_name}")
+            dataset_type_label = "[Text]" if is_text_dataset else "[JSON]"
+            await broadcast_log("info", f"Processing dataset {i+1}/{len(config.datasets)}: {dataset_name} {dataset_type_label}")
             await broadcast_status()
 
-            # Check if text file exists, if not convert it
-            text_file = paths["text_output"] / f"{dataset_name}.text"
-            if not text_file.exists():
-                await broadcast_log("info", f"Converting {dataset_name} to text format...")
-                dataset_dir = paths["json_input"] / dataset_name
-                if dataset_dir.exists():
-                    json_files = sorted(dataset_dir.glob("*.json"))
-                    pairs = []
-                    for json_file in json_files:
-                        try:
-                            with open(json_file, 'r', encoding='utf-8') as f:
-                                data = json.load(f)
-                                pairs.append({
-                                    'question': data.get('question', ''),
-                                    'answer': data.get('answer', '')
-                                })
-                        except Exception:
-                            continue
+            if is_text_dataset:
+                # Standalone text dataset - use as-is from text_datasets directory
+                text_file = paths["text_datasets"] / f"{dataset_name}.text"
+                if not text_file.exists():
+                    await broadcast_log("error", f"Text dataset not found: {text_file}")
+                    continue
+                await broadcast_log("info", f"Using standalone text dataset: {text_file.name}")
+                use_endoftext_split = True
+            else:
+                # JSON dataset - check if text file exists, if not convert it
+                text_file = paths["text_output"] / f"{dataset_name}.text"
+                if not text_file.exists():
+                    await broadcast_log("info", f"Converting {dataset_name} to text format...")
+                    dataset_dir = paths["json_input"] / dataset_name
+                    if dataset_dir.exists():
+                        json_files = sorted(dataset_dir.glob("*.json"))
+                        pairs = []
+                        for json_file in json_files:
+                            try:
+                                with open(json_file, 'r', encoding='utf-8') as f:
+                                    data = json.load(f)
+                                    pairs.append({
+                                        'question': data.get('question', ''),
+                                        'answer': data.get('answer', '')
+                                    })
+                            except Exception:
+                                continue
 
-                    with open(text_file, 'w', encoding='utf-8') as f:
-                        for pair in pairs:
-                            f.write(f"{pair['question']}\n {pair['answer']}\n\n")
+                        with open(text_file, 'w', encoding='utf-8') as f:
+                            for pair in pairs:
+                                f.write(f"{pair['question']}\n {pair['answer']}\n\n")
 
-                    await broadcast_log("success", f"Converted {len(pairs)} pairs to {text_file.name}")
+                        await broadcast_log("success", f"Converted {len(pairs)} pairs to {text_file.name}")
+                use_endoftext_split = False
 
-            # Step output directory
-            step_output_dir = f"{paths['model_output']}/step_{i+1}_{dataset_name}"
+            # Step output directory - includes base model name
+            step_output_dir = f"{paths['model_output']}/step_{i+1}_{dataset_name}-{base_model_name}"
 
             # Log model source for this step
             if i == 0:
@@ -771,10 +928,13 @@ print(f"Using device: {{device}}")
 
 # Load model (same as pipeline)
 model_path = "{current_model_path}"
+base_model_path = "{paths['base_model']}"  # Always use base model for tokenizer
 print(f"Loading model from {{model_path}}...")
 
-tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
-print(f"Loading tokenizer from {{model_path}}...")
+# Always load tokenizer from BASE model to avoid regex pattern issues
+# The tokenizer doesn't change during fine-tuning, only model weights do
+tokenizer = AutoTokenizer.from_pretrained(base_model_path, trust_remote_code=True)
+print(f"Loading tokenizer from {{base_model_path}} (base model)...")
 
 # torch_dtype: float16 for CUDA, float32 otherwise (same as pipeline)
 dtype = torch.float16 if device.type == "cuda" else torch.float32
@@ -792,6 +952,7 @@ if tokenizer.pad_token is None:
 # Prepare dataset (same as pipeline)
 answer_file_path = "{text_file}"
 output_dir = "{step_output_dir}"
+is_text_dataset = {use_endoftext_split}
 print(f"Training on {dataset_name}...")
 print(f"Output will be saved to: {{output_dir}}")
 
@@ -799,13 +960,33 @@ print(f"Preparing dataset: {{answer_file_path}}...")
 with open(answer_file_path, 'r', encoding='utf-8') as f:
     text_content = f.read()
 
-qa_pairs = [pair.strip() for pair in text_content.split('\\n\\n') if pair.strip()]
-print(f"  - Loaded {{len(qa_pairs)}} Q&A pairs")
+if is_text_dataset:
+    # Text dataset - detect and split by separator
+    if '<|endoftext|>' in text_content:
+        samples = [s.strip() for s in text_content.split('<|endoftext|>') if s.strip()]
+        print(f"  - Loaded {{len(samples)}} samples (split by <|endoftext|>)")
+    elif '===END_OF_STORY===' in text_content:
+        samples = [s.strip() for s in text_content.split('===END_OF_STORY===') if s.strip()]
+        print(f"  - Loaded {{len(samples)}} samples (split by ===END_OF_STORY===)")
+    elif 'END_OF_STORY' in text_content:
+        samples = [s.strip() for s in text_content.split('END_OF_STORY') if s.strip()]
+        print(f"  - Loaded {{len(samples)}} samples (split by END_OF_STORY)")
+    elif '---' in text_content and text_content.count('---') > 3:
+        samples = [s.strip() for s in text_content.split('---') if s.strip()]
+        print(f"  - Loaded {{len(samples)}} samples (split by ---)")
+    else:
+        # If no recognized separator, use entire content as single sample
+        samples = [text_content.strip()]
+        print(f"  - Loaded as continuous text (1 sample)")
+else:
+    # JSON-converted dataset - split by double newlines
+    samples = [pair.strip() for pair in text_content.split('\\n\\n') if pair.strip()]
+    print(f"  - Loaded {{len(samples)}} Q&A pairs")
 
 def tokenize_function(examples):
     return tokenizer(examples['text'], truncation=True, max_length=512, padding='max_length')
 
-dataset_dict = {{'text': qa_pairs}}
+dataset_dict = {{'text': samples}}
 train_dataset = Dataset.from_dict(dataset_dict)
 train_dataset = train_dataset.map(tokenize_function, batched=True, remove_columns=['text'])
 train_dataset.set_format(type='torch', columns=['input_ids', 'attention_mask'])
@@ -1370,7 +1551,11 @@ async def load_inference_model(request: dict):
         )
 
         # Load tokenizer and model
-        tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+        try:
+            tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True, fix_mistral_regex=True)
+        except TypeError:
+            # fix_mistral_regex not supported for this tokenizer type
+            tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
 
