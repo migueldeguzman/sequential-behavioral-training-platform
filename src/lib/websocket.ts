@@ -1,4 +1,5 @@
 import type { TrainingStatus, LogEntry } from "@/types";
+import { getWebSocketUrl } from "./config";
 
 type MessageHandler = (data: TrainingStatus | LogEntry) => void;
 
@@ -11,8 +12,7 @@ class WebSocketManager {
   private url: string;
 
   constructor() {
-    this.url =
-      process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000/ws/training";
+    this.url = getWebSocketUrl("/ws/training");
   }
 
   connect(): void {

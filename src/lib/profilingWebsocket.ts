@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { getWebSocketUrl } from './config';
 import type {
   ProfilingMessage,
   ProfilingMessageType,
@@ -41,10 +42,14 @@ export class ProfilingWebSocketManager {
   private shouldReconnect = true;
 
   constructor(baseUrl?: string) {
-    // Default to current host with ws/wss protocol
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = baseUrl || window.location.host;
-    this.url = `${protocol}//${host}/ws/profiling`;
+    // Use config if no baseUrl provided, which will check environment variables
+    if (!baseUrl) {
+      this.url = getWebSocketUrl('/ws/profiling');
+    } else {
+      // Legacy support: if baseUrl is provided, use it directly
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      this.url = `${protocol}//${baseUrl}/ws/profiling`;
+    }
   }
 
   // Set event handlers

@@ -73,7 +73,7 @@
       "title": "Fix WebSocket URL hardcoding in frontend",
       "description": "Multiple frontend files hardcode localhost:8000 for API/WebSocket URLs instead of using environment variables or dynamic detection.",
       "priority": "medium",
-      "passes": false,
+      "passes": true,
       "debug_steps": {
         "review": "Search frontend for 'localhost:8000'. Found in: src/components/profiling/ProfilingControls.tsx (fetch models, start profiling), src/lib/profilingWebsocket.ts (WebSocket connection), src/lib/api.ts.",
         "test": "Try to run frontend on different port or connect to remote backend. API calls and WebSocket connections fail.",

@@ -21,8 +21,9 @@ import type {
   PowerSample,
   TokenMetrics,
 } from "@/types";
+import { API_BASE_URL } from "./config";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_BASE = API_BASE_URL;
 
 async function fetchApi<T>(
   endpoint: string,

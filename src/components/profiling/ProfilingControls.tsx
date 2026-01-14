@@ -1,15 +1,42 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useProfilingContext } from './ProfilingContext';
-import type { ProfiledGenerateRequest } from '@/types';
+import type { ProfiledGenerateRequest, ModelCheckpoint } from '@/types';
+import { API_BASE_URL } from '@/lib/config';
 
 export function ProfilingControls() {
   const { isRunning, isProfiling, connectionState, startProfiling, stopProfiling } = useProfilingContext();
 
+  // Available models
+  const [availableModels, setAvailableModels] = useState<ModelCheckpoint[]>([]);
+  const [loadingModels, setLoadingModels] = useState(true);
+
   // Form state
   const [modelPath, setModelPath] = useState<string>('');
   const [prompt, setPrompt] = useState<string>('');
+
+  // Fetch available models on mount
+  useEffect(() => {
+    const fetchModels = async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/models`);
+        if (response.ok) {
+          const models = await response.json();
+          setAvailableModels(models);
+          // Set default to most recent model if available
+          if (models.length > 0) {
+            setModelPath(models[0].path);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch models:', error);
+      } finally {
+        setLoadingModels(false);
+      }
+    };
+    fetchModels();
+  }, []);
   const [profilingDepth, setProfilingDepth] = useState<'module' | 'deep'>('module');
   const [tags, setTags] = useState<string>('');
   const [experimentName, setExperimentName] = useState<string>('');
@@ -18,6 +45,10 @@ export function ProfilingControls() {
 
   // Handle start profiling
   const handleStartProfiling = async () => {
+    if (!modelPath) {
+      alert('Please select a model');
+      return;
+    }
     if (!prompt.trim()) {
       alert('Please enter a prompt');
       return;
@@ -28,12 +59,8 @@ export function ProfilingControls() {
       profiling_depth: profilingDepth,
       temperature,
       max_length: maxLength,
+      model_path: modelPath,
     };
-
-    // Add optional fields if provided
-    if (modelPath.trim()) {
-      request.model_path = modelPath.trim();
-    }
 
     if (experimentName.trim()) {
       request.experiment_name = experimentName.trim();
@@ -86,20 +113,35 @@ export function ProfilingControls() {
         {/* Model Selector */}
         <div>
           <label htmlFor="model-path" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            Model Path (optional)
+            Model
           </label>
-          <input
+          <select
             id="model-path"
-            type="text"
             value={modelPath}
             onChange={(e) => setModelPath(e.target.value)}
-            disabled={isRunning}
-            placeholder="e.g., /path/to/model or huggingface-model-id"
+            disabled={isRunning || loadingModels}
             className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 dark:disabled:bg-gray-700 disabled:cursor-not-allowed bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-          />
-          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-            Leave empty to use default model
-          </p>
+          >
+            {loadingModels ? (
+              <option value="">Loading models...</option>
+            ) : availableModels.length === 0 ? (
+              <option value="">No trained models found</option>
+            ) : (
+              <>
+                <option value="">-- Select a model --</option>
+                {availableModels.map((model) => (
+                  <option key={model.name} value={model.path}>
+                    {model.name} ({model.size})
+                  </option>
+                ))}
+              </>
+            )}
+          </select>
+          {availableModels.length > 0 && modelPath && (
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400 truncate" title={modelPath}>
+              {modelPath}
+            </p>
+          )}
         </div>
 
         {/* Prompt Input */}
