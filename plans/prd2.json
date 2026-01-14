@@ -203,7 +203,7 @@
       "title": "Add Gemma 3 architecture detection",
       "description": "Gemma 3 models may not be properly detected. They're currently detected as 'llama' but may have different internal structure.",
       "priority": "medium",
-      "passes": false,
+      "passes": true,
       "debug_steps": {
         "review": "Read backend/profiling/model_detector.py. Check if Gemma detection exists. Gemma 3 uses 'Gemma2ForCausalLM' or 'GemmaForCausalLM' class names.",
         "test": "Load Gemma 3 model and check detected architecture. May show 'llama' instead of 'gemma'.",
