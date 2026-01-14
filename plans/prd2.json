@@ -593,7 +593,7 @@
       "title": "Add CPU/GPU device selection",
       "description": "Profiling always uses default device. Should allow selection of specific device (CPU, GPU, MPS) for comparison.",
       "priority": "low",
-      "passes": false,
+      "passes": true,
       "debug_steps": {
         "review": "Read backend/main.py model loading. Uses device_map='auto'. No user control over device.",
         "test": "Cannot force model to run on CPU vs MPS for comparison.",

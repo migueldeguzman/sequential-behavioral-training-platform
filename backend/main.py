@@ -1772,6 +1772,7 @@ class ProfiledGenerateRequest(BaseModel):
     top_p: float = 0.9
     max_length: int = 100
     batch_size: int = 1  # Batch size for throughput analysis
+    device: str = "auto"  # Device selection: "auto", "cpu", "cuda", "mps"
 
 
 @app.post("/api/profiling/generate")
@@ -1831,11 +1832,29 @@ async def profiled_generate(request: ProfiledGenerateRequest):
             warnings.append(f"Power profiling unavailable: {str(e)}")
             power_monitor = None
 
-        # Detect device
-        device = torch.device(
-            "mps" if torch.backends.mps.is_available() else
-            ("cuda" if torch.cuda.is_available() else "cpu")
-        )
+        # Determine device based on request.device parameter
+        if request.device == "auto":
+            # Auto-detect best available device
+            device = torch.device(
+                "mps" if torch.backends.mps.is_available() else
+                ("cuda" if torch.cuda.is_available() else "cpu")
+            )
+            logger.info(f"Auto-detected device: {device}")
+        elif request.device == "cpu":
+            device = torch.device("cpu")
+            logger.info("Using CPU device (as requested)")
+        elif request.device == "cuda":
+            if not torch.cuda.is_available():
+                raise ValueError("CUDA device requested but CUDA is not available")
+            device = torch.device("cuda")
+            logger.info("Using CUDA device (as requested)")
+        elif request.device == "mps":
+            if not torch.backends.mps.is_available():
+                raise ValueError("MPS device requested but MPS is not available on this system")
+            device = torch.device("mps")
+            logger.info("Using MPS device (as requested)")
+        else:
+            raise ValueError(f"Invalid device '{request.device}'. Must be one of: auto, cpu, cuda, mps")
 
         # Send model loading start event
         model_name = Path(request.model_path).name

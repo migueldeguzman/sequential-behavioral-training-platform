@@ -518,6 +518,8 @@ export interface ProfiledGenerateRequest {
   temperature?: number;
   top_p?: number;
   max_length?: number;
+  batch_size?: number;
+  device?: 'auto' | 'cpu' | 'cuda' | 'mps';
 }
 
 export interface ProfilingRunsFilter {

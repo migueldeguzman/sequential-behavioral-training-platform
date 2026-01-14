@@ -46,6 +46,7 @@ export function ProfilingControls() {
   const [temperature, setTemperature] = useState<number>(0.7);
   const [topP, setTopP] = useState<number>(0.9);
   const [maxLength, setMaxLength] = useState<number>(100);
+  const [device, setDevice] = useState<'auto' | 'cpu' | 'cuda' | 'mps'>('auto');
 
   // Handle start profiling
   const handleStartProfiling = async () => {
@@ -65,6 +66,7 @@ export function ProfilingControls() {
       top_p: topP,
       max_length: maxLength,
       model_path: modelPath,
+      device,
     };
 
     if (experimentName.trim()) {
@@ -295,6 +297,28 @@ export function ProfilingControls() {
                 disabled={isRunning}
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 dark:disabled:bg-gray-700 disabled:cursor-not-allowed bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
               />
+            </div>
+
+            {/* Device Selection */}
+            <div>
+              <label htmlFor="device" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Device
+              </label>
+              <select
+                id="device"
+                value={device}
+                onChange={(e) => setDevice(e.target.value as 'auto' | 'cpu' | 'cuda' | 'mps')}
+                disabled={isRunning}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 dark:disabled:bg-gray-700 disabled:cursor-not-allowed bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+              >
+                <option value="auto">Auto (detect best)</option>
+                <option value="cpu">CPU</option>
+                <option value="cuda">CUDA (NVIDIA GPU)</option>
+                <option value="mps">MPS (Apple Silicon GPU)</option>
+              </select>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                Select device for inference. Use different devices to compare energy profiles.
+              </p>
             </div>
           </div>
         </details>
