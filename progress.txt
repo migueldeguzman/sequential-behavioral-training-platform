@@ -3255,3 +3255,21 @@ Notes:
 - Added cost_carbon_metrics interface to TypeScript ProfilingRunSummary type
 - Based on TokenPowerBench methodology for sustainability reporting
 - Verified TypeScript compilation with npm run build (SUCCESS)
+
+2026-01-14 | EP-092 | COMPLETED | Energy Scaling Analysis
+- Added /api/profiling/energy-scaling-analysis endpoint in backend/main.py
+- Endpoint collects energy data across models with different parameter counts
+- Performs power-law curve fitting: energy = a × params^b
+- Uses scipy.optimize.curve_fit when available, falls back to log-log linear regression
+- Calculates scaling exponent b to determine if scaling is sub-linear/linear/super-linear
+- Computes R² goodness of fit metric for curve quality assessment
+- Analyzes scaling efficiency between smallest and largest models
+- Returns comprehensive statistics: model count, total runs, parameter range, energy range
+- Created EnergyScalingChart.tsx frontend component with Canvas-based visualization
+- Scatter plot shows model size vs energy with power-law curve overlay
+- Color-codes points by energy-per-million-params efficiency (green=efficient, red=inefficient)
+- Interactive tooltip shows model name, params, energy, efficiency metrics
+- Displays interpretation panel with power-law fit analysis and scaling efficiency comparison
+- Added TypeScript types: EnergyScalingDataPoint, PowerLawFit, ScalingEfficiency, EnergyScalingAnalysis
+- Based on TokenPowerBench finding: 1B→70B shows 7.3× energy (not 70×) due to memory/cache overhead
+- Verified TypeScript compilation with npm run build (SUCCESS)

@@ -3630,6 +3630,314 @@ def get_long_context_analysis(
             db.close()
 
 
+@app.get("/api/profiling/energy-scaling-analysis")
+def get_energy_scaling_analysis(
+    model_name: Optional[str] = None,
+    min_params: Optional[float] = None,
+    max_params: Optional[float] = None
+):
+    """
+    Analyze super-linear energy scaling with model parameters across different model sizes.
+
+    Based on TokenPowerBench finding: Energy scaling is super-linear but sublinear to parameter count.
+    For example, 1B→70B shows 7.3× energy increase (not 70×) due to memory/cache overhead.
+
+    This endpoint:
+    1. Collects energy data across models of different sizes
+    2. Plots energy vs total_params scatter
+    3. Fits power-law curve: energy = a × params^b
+    4. Calculates scaling exponent b (expect b < 1 for sub-linear, but can be super-linear in practice)
+    5. Shows energy per million parameters metric
+    6. Identifies scaling efficiency
+
+    Query Parameters:
+        model_name: Optional filter by model name pattern
+        min_params: Optional minimum parameter count (in millions)
+        max_params: Optional maximum parameter count (in millions)
+
+    Returns:
+        {
+            "scaling_data": [
+                {
+                    "run_id": "abc123",
+                    "model_name": "llama-7b",
+                    "total_params": 7000000000,
+                    "total_params_millions": 7000.0,
+                    "total_energy_mj": 450.2,
+                    "energy_per_million_params": 0.0643,
+                    "input_tokens": 100,
+                    "output_tokens": 50,
+                    "joules_per_token": 0.003
+                },
+                ...
+            ],
+            "power_law_fit": {
+                "coefficient_a": 2.5,
+                "exponent_b": 0.85,
+                "formula": "energy_mj = 2.5 × (params_millions ^ 0.85)",
+                "r_squared": 0.92,
+                "interpretation": "Sub-linear scaling: larger models are more energy-efficient per parameter"
+            },
+            "scaling_efficiency": {
+                "smallest_model": {
+                    "name": "llama-1b",
+                    "params_millions": 1000.0,
+                    "energy_per_million_params": 0.0850
+                },
+                "largest_model": {
+                    "name": "llama-70b",
+                    "params_millions": 70000.0,
+                    "energy_per_million_params": 0.0621
+                },
+                "efficiency_gain_pct": 26.9,
+                "conclusion": "Larger models are 26.9% more efficient per parameter"
+            },
+            "statistics": {
+                "model_count": 5,
+                "total_runs": 25,
+                "param_range_millions": [1000.0, 70000.0],
+                "energy_range_mj": [50.2, 2456.8]
+            }
+        }
+
+    Example:
+        GET /api/profiling/energy-scaling-analysis
+        - Analyze all models
+
+        GET /api/profiling/energy-scaling-analysis?model_name=llama
+        - Analyze only models with "llama" in the name
+
+        GET /api/profiling/energy-scaling-analysis?min_params=1000&max_params=10000
+        - Analyze models between 1B and 10B parameters
+    """
+    db = None
+    try:
+        db = ProfileDatabase()
+        db.connect()
+
+        # Get runs with model parameters
+        cursor = db.conn.cursor()
+
+        # Build query with filters
+        query = """
+            SELECT
+                run_id,
+                model_name,
+                total_params,
+                total_energy_mj,
+                input_token_count,
+                output_token_count,
+                token_count,
+                embedding_params,
+                attention_params_per_layer,
+                ffn_params_per_layer,
+                num_layers
+            FROM profiling_runs
+            WHERE status = 'completed'
+                AND total_params IS NOT NULL
+                AND total_energy_mj IS NOT NULL
+                AND total_energy_mj > 0
+        """
+
+        params = []
+
+        if model_name:
+            query += " AND model_name LIKE ?"
+            params.append(f"%{model_name}%")
+
+        if min_params is not None:
+            query += " AND total_params >= ?"
+            params.append(min_params * 1_000_000)  # Convert millions to actual count
+
+        if max_params is not None:
+            query += " AND total_params <= ?"
+            params.append(max_params * 1_000_000)  # Convert millions to actual count
+
+        query += " ORDER BY total_params ASC"
+
+        cursor.execute(query, params)
+        runs = cursor.fetchall()
+
+        if not runs:
+            return {
+                "scaling_data": [],
+                "power_law_fit": None,
+                "scaling_efficiency": None,
+                "statistics": {
+                    "model_count": 0,
+                    "total_runs": 0,
+                    "message": "No profiling runs found with parameter count data. Run profiled inference first."
+                }
+            }
+
+        # Build scaling data
+        scaling_data = []
+        for run in runs:
+            total_params = run["total_params"]
+            total_params_millions = total_params / 1_000_000
+            total_energy_mj = run["total_energy_mj"]
+            token_count = run["token_count"] or ((run["input_token_count"] or 0) + (run["output_token_count"] or 0))
+
+            energy_per_million_params = total_energy_mj / total_params_millions if total_params_millions > 0 else 0
+            joules_per_token = (total_energy_mj / 1000) / token_count if token_count > 0 else 0
+
+            scaling_data.append({
+                "run_id": run["run_id"],
+                "model_name": run["model_name"],
+                "total_params": total_params,
+                "total_params_millions": round(total_params_millions, 2),
+                "total_energy_mj": round(total_energy_mj, 4),
+                "energy_per_million_params": round(energy_per_million_params, 6),
+                "input_tokens": run["input_token_count"],
+                "output_tokens": run["output_token_count"],
+                "joules_per_token": round(joules_per_token, 6)
+            })
+
+        # Calculate power-law fit: energy = a × params^b
+        # Use numpy for curve fitting if available, otherwise use simple log-log linear regression
+        power_law_fit = None
+        try:
+            import numpy as np
+            from scipy.optimize import curve_fit
+
+            # Extract data for fitting
+            params_millions_array = np.array([d["total_params_millions"] for d in scaling_data])
+            energy_array = np.array([d["total_energy_mj"] for d in scaling_data])
+
+            # Define power law function
+            def power_law(x, a, b):
+                return a * np.power(x, b)
+
+            # Fit the curve
+            popt, _ = curve_fit(power_law, params_millions_array, energy_array, p0=[1.0, 0.8])
+            a, b = popt
+
+            # Calculate R²
+            residuals = energy_array - power_law(params_millions_array, a, b)
+            ss_res = np.sum(residuals**2)
+            ss_tot = np.sum((energy_array - np.mean(energy_array))**2)
+            r_squared = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
+
+            # Interpret the exponent
+            if b < 0.95:
+                interpretation = "Sub-linear scaling: larger models are more energy-efficient per parameter"
+            elif b > 1.05:
+                interpretation = "Super-linear scaling: larger models are less energy-efficient per parameter"
+            else:
+                interpretation = "Near-linear scaling: energy scales proportionally with parameters"
+
+            power_law_fit = {
+                "coefficient_a": round(a, 4),
+                "exponent_b": round(b, 4),
+                "formula": f"energy_mj = {round(a, 4)} × (params_millions ^ {round(b, 4)})",
+                "r_squared": round(r_squared, 4),
+                "interpretation": interpretation
+            }
+
+        except ImportError:
+            # Fallback: simple log-log linear regression
+            import math
+
+            # Take log of both params and energy
+            log_params = [math.log(d["total_params_millions"]) for d in scaling_data]
+            log_energy = [math.log(d["total_energy_mj"]) for d in scaling_data]
+
+            # Simple linear regression on log-log space
+            n = len(log_params)
+            sum_x = sum(log_params)
+            sum_y = sum(log_energy)
+            sum_xy = sum(x * y for x, y in zip(log_params, log_energy))
+            sum_x2 = sum(x * x for x in log_params)
+
+            # Calculate slope (b) and intercept (log_a)
+            b = (n * sum_xy - sum_x * sum_y) / (n * sum_x2 - sum_x * sum_x)
+            log_a = (sum_y - b * sum_x) / n
+            a = math.exp(log_a)
+
+            # Interpret the exponent
+            if b < 0.95:
+                interpretation = "Sub-linear scaling: larger models are more energy-efficient per parameter"
+            elif b > 1.05:
+                interpretation = "Super-linear scaling: larger models are less energy-efficient per parameter"
+            else:
+                interpretation = "Near-linear scaling: energy scales proportionally with parameters"
+
+            power_law_fit = {
+                "coefficient_a": round(a, 4),
+                "exponent_b": round(b, 4),
+                "formula": f"energy_mj = {round(a, 4)} × (params_millions ^ {round(b, 4)})",
+                "r_squared": None,  # Not calculated in fallback
+                "interpretation": interpretation,
+                "note": "Computed using simple log-log regression (scipy not available)"
+            }
+        except Exception as e:
+            logger.warning(f"Failed to compute power law fit: {str(e)}")
+            power_law_fit = {
+                "error": "Failed to compute power law fit",
+                "message": str(e)
+            }
+
+        # Calculate scaling efficiency (smallest vs largest)
+        scaling_efficiency = None
+        if len(scaling_data) >= 2:
+            smallest = min(scaling_data, key=lambda x: x["total_params_millions"])
+            largest = max(scaling_data, key=lambda x: x["total_params_millions"])
+
+            efficiency_gain_pct = ((smallest["energy_per_million_params"] - largest["energy_per_million_params"])
+                                   / smallest["energy_per_million_params"] * 100)
+
+            if efficiency_gain_pct > 0:
+                conclusion = f"Larger models are {abs(round(efficiency_gain_pct, 1))}% more efficient per parameter"
+            elif efficiency_gain_pct < 0:
+                conclusion = f"Smaller models are {abs(round(efficiency_gain_pct, 1))}% more efficient per parameter"
+            else:
+                conclusion = "Models show similar efficiency per parameter"
+
+            scaling_efficiency = {
+                "smallest_model": {
+                    "name": smallest["model_name"],
+                    "params_millions": smallest["total_params_millions"],
+                    "energy_per_million_params": smallest["energy_per_million_params"]
+                },
+                "largest_model": {
+                    "name": largest["model_name"],
+                    "params_millions": largest["total_params_millions"],
+                    "energy_per_million_params": largest["energy_per_million_params"]
+                },
+                "efficiency_gain_pct": round(efficiency_gain_pct, 1),
+                "conclusion": conclusion
+            }
+
+        # Calculate statistics
+        unique_models = set(d["model_name"] for d in scaling_data)
+        param_values = [d["total_params_millions"] for d in scaling_data]
+        energy_values = [d["total_energy_mj"] for d in scaling_data]
+
+        statistics = {
+            "model_count": len(unique_models),
+            "total_runs": len(scaling_data),
+            "param_range_millions": [round(min(param_values), 2), round(max(param_values), 2)],
+            "energy_range_mj": [round(min(energy_values), 4), round(max(energy_values), 4)]
+        }
+
+        return {
+            "scaling_data": scaling_data,
+            "power_law_fit": power_law_fit,
+            "scaling_efficiency": scaling_efficiency,
+            "statistics": statistics
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to get energy scaling analysis: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get energy scaling analysis: {str(e)}"
+        )
+    finally:
+        if db:
+            db.close()
+
+
 # WebSocket connection manager for profiling streams
 class ProfilingConnectionManager:
     """Manages WebSocket connections for real-time profiling data streaming."""

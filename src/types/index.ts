@@ -500,3 +500,56 @@ export interface ProfilingRunsFilter {
   sort_by?: 'date' | 'duration' | 'energy' | 'efficiency' | 'joules_per_token';
   sort_order?: 'asc' | 'desc';
 }
+
+// EP-092: Energy Scaling Analysis types
+
+export interface EnergyScalingDataPoint {
+  run_id: string;
+  model_name: string;
+  total_params: number;
+  total_params_millions: number;
+  total_energy_mj: number;
+  energy_per_million_params: number;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  joules_per_token: number;
+}
+
+export interface PowerLawFit {
+  coefficient_a: number;
+  exponent_b: number;
+  formula: string;
+  r_squared: number | null;
+  interpretation: string;
+  note?: string;
+  error?: string;
+  message?: string;
+}
+
+export interface ScalingEfficiency {
+  smallest_model: {
+    name: string;
+    params_millions: number;
+    energy_per_million_params: number;
+  };
+  largest_model: {
+    name: string;
+    params_millions: number;
+    energy_per_million_params: number;
+  };
+  efficiency_gain_pct: number;
+  conclusion: string;
+}
+
+export interface EnergyScalingAnalysis {
+  scaling_data: EnergyScalingDataPoint[];
+  power_law_fit: PowerLawFit | null;
+  scaling_efficiency: ScalingEfficiency | null;
+  statistics: {
+    model_count: number;
+    total_runs: number;
+    param_range_millions?: [number, number];
+    energy_range_mj?: [number, number];
+    message?: string;
+  };
+}
