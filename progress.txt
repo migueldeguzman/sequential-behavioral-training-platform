@@ -3386,3 +3386,18 @@ Notes:
 - Verified database operations work without explicit connect() calls
 - Tested with Python syntax validation and integration test
 - All database operations now handle connection management gracefully
+
+
+### EP-099: Graceful Profiling Fallback - COMPLETED
+- Implemented graceful degradation for profiling component failures
+- Wrapped PowerMonitor initialization in try-catch with fallback to None
+- Wrapped LayerProfiler initialization in try-catch with fallback to None
+- Wrapped DeepAttentionProfiler initialization in try-catch with fallback to None
+- Added warnings array to track which profiling components failed
+- Modified profiled_generate endpoint to return warnings in response
+- Updated response message to indicate limited profiling when components fail
+- Added safe cleanup with try-catch for unpatch() and detach() operations
+- Fixed pipeline_profiler.py to handle None power_monitor in streaming loop
+- Inference now completes successfully even if advanced profiling hooks fail
+- No more 500 errors for recoverable profiling failures
+- Basic timing metrics still captured when power profiling unavailable

@@ -171,6 +171,10 @@ class InferencePipelineProfiler:
         while self._streaming_active:
             try:
                 # Get all samples collected so far
+                if not self.power_monitor:
+                    time.sleep(0.1)
+                    continue
+
                 samples = self.power_monitor.get_samples()
 
                 # Stream any new samples

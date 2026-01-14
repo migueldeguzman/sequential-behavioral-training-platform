@@ -1668,7 +1668,7 @@
       "title": "Graceful Profiling Fallback",
       "description": "Allow inference to run with basic timing if advanced profiling hooks fail",
       "priority": "HIGH",
-      "passes": false,
+      "passes": true,
       "error": "Profiling failures cause 500 errors instead of graceful degradation",
       "debug_steps": {
         "1_DEBUG_REVIEW": [

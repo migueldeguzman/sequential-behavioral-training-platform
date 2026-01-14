@@ -1756,11 +1756,12 @@ async def export_results(request: ExportRequest):
 # Pydantic models for profiling
 class ProfiledGenerateRequest(BaseModel):
     prompt: str
-    modelPath: str
-    profilingDepth: str = "module"  # "module" or "deep"
-    tags: Optional[str] = None
-    experimentName: Optional[str] = None
-    config: InferenceConfig = InferenceConfig()
+    model_path: str
+    profiling_depth: str = "module"  # "module" or "deep"
+    tags: Optional[list[str]] = None
+    experiment_name: Optional[str] = None
+    temperature: float = 0.7
+    max_length: int = 100
 
 
 @app.post("/api/profiling/generate")
@@ -1784,18 +1785,26 @@ async def profiled_generate(request: ProfiledGenerateRequest):
     from profiling.database import ProfileDatabase
     from profiling.pipeline_profiler import InferencePipelineProfiler
 
-    model_dir = Path(request.modelPath)
+    model_dir = Path(request.model_path)
     if not model_dir.exists():
-        raise HTTPException(status_code=404, detail=f"Model not found: {request.modelPath}")
+        raise HTTPException(status_code=404, detail=f"Model not found: {request.model_path}")
+
+    # Track which profiling components are available
+    warnings = []
 
     try:
-        # Initialize profiling components
-        power_monitor = PowerMonitor(sample_interval_ms=100)
-        if not power_monitor.is_available():
-            raise HTTPException(
-                status_code=503,
-                detail="powermetrics not available. Run setup_powermetrics.sh to configure sudo access."
-            )
+        # Initialize profiling components with graceful fallbacks
+        power_monitor = None
+        try:
+            power_monitor = PowerMonitor(sample_interval_ms=100)
+            if not power_monitor.is_available():
+                logger.warning("powermetrics not available - power profiling disabled")
+                warnings.append("Power profiling unavailable: powermetrics not configured")
+                power_monitor = None
+        except Exception as e:
+            logger.warning(f"Failed to initialize PowerMonitor: {e}")
+            warnings.append(f"Power profiling unavailable: {str(e)}")
+            power_monitor = None
 
         # Detect device
         device = torch.device(
@@ -1804,25 +1813,39 @@ async def profiled_generate(request: ProfiledGenerateRequest):
         )
 
         # Load model and tokenizer
-        tokenizer = AutoTokenizer.from_pretrained(request.modelPath, trust_remote_code=True)
+        tokenizer = AutoTokenizer.from_pretrained(request.model_path, trust_remote_code=True)
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
 
         dtype = torch.float16 if device.type == "cuda" else torch.float32
         model = AutoModelForCausalLM.from_pretrained(
-            request.modelPath,
+            request.model_path,
             torch_dtype=dtype,
             low_cpu_mem_usage=True,
             trust_remote_code=True
         )
         model.to(device)
 
-        # Initialize profilers
-        layer_profiler = LayerProfiler(model)
+        # Initialize profilers with graceful fallbacks
+        layer_profiler = None
+        try:
+            layer_profiler = LayerProfiler(model)
+            logger.info("LayerProfiler initialized successfully")
+        except Exception as e:
+            logger.warning(f"Failed to initialize LayerProfiler: {e}")
+            warnings.append(f"Layer profiling unavailable: {str(e)}")
+            layer_profiler = None
+
         deep_profiler = None
-        if request.profilingDepth == "deep":
-            deep_profiler = DeepAttentionProfiler(model)
-            deep_profiler.patch()
+        if request.profiling_depth == "deep":
+            try:
+                deep_profiler = DeepAttentionProfiler(model)
+                deep_profiler.patch()
+                logger.info("DeepAttentionProfiler initialized successfully")
+            except Exception as e:
+                logger.warning(f"Failed to initialize DeepAttentionProfiler: {e}")
+                warnings.append(f"Deep profiling unavailable: {str(e)}")
+                deep_profiler = None
 
         database = ProfileDatabase()
 
@@ -1969,8 +1992,8 @@ async def profiled_generate(request: ProfiledGenerateRequest):
         with profiler.run(
             prompt=request.prompt,
             model_name=model_dir.name,
-            profiling_depth=request.profilingDepth,
-            experiment_name=request.experimentName,
+            profiling_depth=request.profiling_depth,
+            experiment_name=request.experiment_name,
             tags=request.tags,
             model=model
         ) as session:
@@ -1989,13 +2012,13 @@ async def profiled_generate(request: ProfiledGenerateRequest):
                     output = model.generate(
                         inputs["input_ids"],
                         attention_mask=inputs["attention_mask"],
-                        max_length=request.config.maxLength,
+                        max_new_tokens=request.max_length,
                         num_return_sequences=1,
-                        no_repeat_ngram_size=request.config.noRepeatNgramSize,
-                        do_sample=request.config.doSample,
-                        top_k=request.config.topK,
-                        top_p=request.config.topP,
-                        temperature=request.config.temperature,
+                        no_repeat_ngram_size=2,
+                        do_sample=request.temperature > 0,
+                        top_k=50,
+                        top_p=0.9,
+                        temperature=max(request.temperature, 0.01),
                         use_cache=True,
                         pad_token_id=tokenizer.pad_token_id,
                     )
@@ -2012,15 +2035,30 @@ async def profiled_generate(request: ProfiledGenerateRequest):
 
         # Cleanup
         if deep_profiler:
-            deep_profiler.unpatch()
-        layer_profiler.detach()
+            try:
+                deep_profiler.unpatch()
+            except Exception as e:
+                logger.warning(f"Failed to unpatch DeepProfiler: {e}")
+
+        if layer_profiler:
+            try:
+                layer_profiler.detach()
+            except Exception as e:
+                logger.warning(f"Failed to detach LayerProfiler: {e}")
 
         # Data is automatically saved to database via profiler.run context manager
-        return {
+        result = {
             "runId": session.run_id,
             "response": response,
             "message": "Profiled inference completed successfully"
         }
+
+        # Include warnings if any profiling components failed
+        if warnings:
+            result["warnings"] = warnings
+            result["message"] = "Inference completed with limited profiling data"
+
+        return result
 
     except Exception as e:
         logger.error(f"Profiled generation failed: {str(e)}")
