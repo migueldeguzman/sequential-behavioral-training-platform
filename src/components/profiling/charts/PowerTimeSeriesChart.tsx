@@ -1,10 +1,11 @@
 'use client';
 
 import React, { useRef, useEffect, useState } from 'react';
-import type { PowerSample } from '@/types';
+import type { PowerSample, PipelineSection } from '@/types';
 
 interface PowerTimeSeriesChartProps {
   samples: PowerSample[];
+  sections?: PipelineSection[]; // Phase sections for annotations
   width?: number;
   height?: number;
   className?: string;
@@ -68,6 +69,7 @@ const DEFAULT_CONFIG: ChartConfig = {
 
 export function PowerTimeSeriesChart({
   samples,
+  sections = [],
   width = 800,
   height = 400,
   className = '',
@@ -311,6 +313,84 @@ export function PowerTimeSeriesChart({
       }
     }
 
+    // Draw phase boundary annotations if sections are provided
+    if (sections.length > 0) {
+      // Group sections by phase to get phase-level aggregates
+      const phaseGroups = new Map<string, { start_time: number; end_time: number; energy_mj: number }>();
+
+      sections.forEach(section => {
+        const existing = phaseGroups.get(section.phase);
+        if (!existing) {
+          phaseGroups.set(section.phase, {
+            start_time: section.start_time,
+            end_time: section.end_time,
+            energy_mj: section.energy_mj
+          });
+        } else {
+          // Update to include full phase range
+          existing.start_time = Math.min(existing.start_time, section.start_time);
+          existing.end_time = Math.max(existing.end_time, section.end_time);
+          existing.energy_mj += section.energy_mj;
+        }
+      });
+
+      // Draw phase boundaries and labels
+      phaseGroups.forEach((phaseData, phaseName) => {
+        const startX = timeToX(phaseData.start_time);
+        const endX = timeToX(phaseData.end_time);
+        const duration = phaseData.end_time - phaseData.start_time;
+
+        // Check if this phase is visible in the current time window
+        if (endX < DEFAULT_CONFIG.padding.left || startX > width - DEFAULT_CONFIG.padding.right) {
+          return; // Skip if outside visible range
+        }
+
+        // Draw vertical line at phase start
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.moveTo(startX, DEFAULT_CONFIG.padding.top);
+        ctx.lineTo(startX, height - DEFAULT_CONFIG.padding.bottom);
+        ctx.stroke();
+
+        // Draw vertical line at phase end
+        ctx.beginPath();
+        ctx.moveTo(endX, DEFAULT_CONFIG.padding.top);
+        ctx.lineTo(endX, height - DEFAULT_CONFIG.padding.bottom);
+        ctx.stroke();
+
+        // Format phase name for display
+        const phaseLabel = phaseName
+          .split('_')
+          .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+          .join(' ');
+
+        // Draw phase label with duration and energy
+        const labelX = (startX + endX) / 2;
+        const labelY = DEFAULT_CONFIG.padding.top - 10;
+
+        // Check if there's enough space for the label
+        const labelWidth = endX - startX;
+        if (labelWidth > 80) {
+          ctx.fillStyle = '#ffffff';
+          ctx.font = 'bold 11px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'bottom';
+          ctx.fillText(phaseLabel, labelX, labelY);
+
+          // Draw duration and energy below the phase name
+          ctx.font = '10px sans-serif';
+          ctx.fillStyle = '#d1d5db';
+          ctx.fillText(
+            `${duration.toFixed(0)}ms · ${phaseData.energy_mj.toFixed(1)}mJ`,
+            labelX,
+            labelY + 12
+          );
+        }
+      });
+    }
+
     // Helper function to draw a line series
     const drawLine = (color: string, getValue: (sample: PowerSample) => number) => {
       if (visibleSamples.length === 0) return;
@@ -423,7 +503,7 @@ export function PowerTimeSeriesChart({
       });
     }
 
-  }, [samples, width, height, autoScroll, windowDurationMs, hoveredPoint]);
+  }, [samples, sections, width, height, autoScroll, windowDurationMs, hoveredPoint]);
 
   return (
     <div className={`relative ${className}`}>

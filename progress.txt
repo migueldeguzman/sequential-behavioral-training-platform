@@ -3273,3 +3273,16 @@ Notes:
 - Added TypeScript types: EnergyScalingDataPoint, PowerLawFit, ScalingEfficiency, EnergyScalingAnalysis
 - Based on TokenPowerBench finding: 1B→70B shows 7.3× energy (not 70×) due to memory/cache overhead
 - Verified TypeScript compilation with npm run build (SUCCESS)
+
+2026-01-14 | EP-094 | COMPLETED | Power Timeline Phase Annotations
+- Enhanced PowerTimeSeriesChart component to add phase boundary annotations
+- Added sections prop to accept PipelineSection[] data for phase information
+- Implemented phase grouping to aggregate section data by phase (pre_inference, prefill, decode, post_inference)
+- Draw vertical lines at phase start and end boundaries with 2px white lines
+- Format phase names for display (capitalize and split underscores)
+- Display phase labels above the timeline with phase name, duration (ms), and energy (mJ)
+- Labels only shown when there's enough horizontal space (> 80px)
+- Phase boundaries and labels respect the visible time window for auto-scroll mode
+- Updated useEffect dependencies to include sections array
+- Based on TokenPowerBench Figure 1: Shows clear phase boundaries on power timeline
+- Verified TypeScript compilation with npm run build (SUCCESS)
