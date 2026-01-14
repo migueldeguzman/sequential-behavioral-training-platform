@@ -138,7 +138,7 @@
       "title": "Fix WebSocket reconnection race condition",
       "description": "profilingWebsocket.ts reconnection logic can cause duplicate connections if reconnection attempt starts while previous connection is still closing.",
       "priority": "low",
-      "passes": false,
+      "passes": true,
       "debug_steps": {
         "review": "Read src/lib/profilingWebsocket.ts reconnection logic. Multiple rapid disconnects can trigger multiple reconnection attempts.",
         "test": "Rapidly toggle profiling on/off while WebSocket is connecting. May see duplicate event handlers or missed events.",

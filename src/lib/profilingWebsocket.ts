@@ -13,7 +13,7 @@ import type {
 } from '@/types';
 
 // WebSocket connection states
-export type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
+export type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'disconnecting';
 
 // Event handler types for each message type
 export type ProfilingEventHandlers = {
@@ -79,8 +79,20 @@ export class ProfilingWebSocketManager {
 
   // Connect to WebSocket
   connect(): void {
-    if (this.ws?.readyState === WebSocket.OPEN || this.ws?.readyState === WebSocket.CONNECTING) {
+    // Don't start a new connection if already connecting or connected
+    if (this.connectionState === 'connecting' || this.connectionState === 'connected') {
       return;
+    }
+
+    // Don't start a new connection if disconnecting
+    if (this.connectionState === 'disconnecting') {
+      return;
+    }
+
+    // Cancel any pending reconnection attempt
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
     }
 
     this.setConnectionState('connecting');
@@ -134,20 +146,27 @@ export class ProfilingWebSocketManager {
 
   // Schedule reconnection with exponential backoff
   private scheduleReconnect(): void {
+    // Don't reconnect if already connecting or if a reconnection is scheduled
+    if (this.connectionState === 'connecting' || this.connectionState === 'connected') {
+      return;
+    }
+
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
       this.setConnectionState('disconnected');
       this.handlers.error?.(new Error('Max reconnection attempts reached'));
       return;
     }
 
+    // Don't schedule multiple reconnection attempts
     if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
+      return;
     }
 
     this.setConnectionState('reconnecting');
     this.reconnectAttempts++;
 
     this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
       this.connect();
     }, this.reconnectDelay);
 
@@ -159,12 +178,22 @@ export class ProfilingWebSocketManager {
   disconnect(): void {
     this.shouldReconnect = false;
 
+    // Cancel any pending reconnection timer
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
 
+    // If already disconnected, nothing to do
+    if (this.connectionState === 'disconnected') {
+      return;
+    }
+
+    // Set disconnecting state to prevent new connections
+    this.setConnectionState('disconnecting');
+
     if (this.ws) {
+      // Close the WebSocket connection
       this.ws.close();
       this.ws = null;
     }
