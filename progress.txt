@@ -2912,3 +2912,44 @@ Future Enhancements:
 - Frontend UI for retention management
 - Alerts when database size exceeds threshold
 ---
+
+
+## 2026-01-14
+### EP-069: Testing - PowerMonitor Unit Tests - COMPLETED
+- Created comprehensive unit test suite in backend/tests/test_power_monitor.py
+- Tests for PowerSample dataclass: creation, properties, defaults
+- Tests for PowerMonitor initialization: default/custom intervals, initial state
+- Tests for plist parsing: complete/minimal/invalid plists, phase tagging
+- Tests for lifecycle: start/stop success, error conditions, context manager
+- Tests for sample collection: empty state, retrieval, thread safety
+- Tests for phase management: valid/invalid phases, get/set operations
+- Tests for peak power tracking: initial values, tracking during parsing
+- Tests for idle baseline measurement: successful measurement, error handling
+- Tests for availability check: success, permission denied, timeout, not found
+- Tests for error handling: process termination, kill on timeout
+- Mocked powermetrics subprocess using unittest.mock for CI compatibility
+- All 31 tests pass successfully
+- Test coverage includes:
+  * Plist parsing with sample data
+  * Start/stop lifecycle management
+  * Sample collection and thread-safe access
+  * Error handling for all edge cases
+  * Subprocess mocking for CI environments
+
+Files Created:
+- backend/tests/__init__.py: Test package initialization
+- backend/tests/test_power_monitor.py: PowerMonitor unit tests (31 tests)
+
+Testing Results:
+- 31 tests passed, 0 failed
+- Test execution time: ~0.9 seconds
+- All subprocess interactions properly mocked for CI
+- Thread safety verified with concurrent access tests
+- Error conditions properly handled and tested
+
+Notes:
+- Tests use unittest.mock to avoid requiring actual powermetrics access
+- Sample plist data based on real powermetrics output structure
+- Tests verify all core functionality without requiring macOS privileges
+- Suitable for CI/CD pipelines on any platform
+---

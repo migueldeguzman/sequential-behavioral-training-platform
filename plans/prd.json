@@ -1135,7 +1135,7 @@
       "title": "Testing - PowerMonitor Unit Tests",
       "description": "Add unit tests for PowerMonitor class",
       "priority": "MEDIUM",
-      "passes": false,
+      "passes": true,
       "steps": [
         "Test plist parsing with sample data",
         "Test start/stop lifecycle",
