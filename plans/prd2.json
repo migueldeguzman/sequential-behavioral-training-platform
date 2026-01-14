@@ -177,7 +177,7 @@
       "title": "Fix PowerTimeSeriesChart data format mismatch",
       "description": "PowerTimeSeriesChart expects samples with 'timestamp' field but power samples may have different field names between WebSocket and internal storage.",
       "priority": "medium",
-      "passes": false,
+      "passes": true,
       "debug_steps": {
         "review": "Read src/components/profiling/charts/PowerTimeSeriesChart.tsx. Check PowerSample type and what fields it expects. Compare to WebSocket message format.",
         "test": "Start profiling and check if power chart displays data. May show empty or flat line.",

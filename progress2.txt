@@ -66,3 +66,8 @@ Status: Fixed power sample timestamp using wrong base
 Description: Fixed power sample timestamps in WebSocket events to use relative time instead of Unix timestamps. The backend was sending sample.timestamp (Unix timestamp) but the frontend PowerTimeSeriesChart expects timestamp in milliseconds relative to profiling start. Updated stream_power_sample callback in backend/main.py to send sample.relative_time_ms as the timestamp field in both the message and data objects. Also added the phase field to the data object for proper phase display in charts. This fix ensures the power chart X-axis shows time from 0 to profiling duration in seconds, rather than showing huge Unix timestamp values.
 Files Modified: backend/main.py
 
+[2026-01-14] BUG-014 - COMPLETED
+Status: Fix PowerTimeSeriesChart data format mismatch (verified already fixed)
+Description: After thorough code review, confirmed that the PowerTimeSeriesChart data format is already correct and matching between backend and frontend. Backend sends PowerSample via WebSocket with all required fields: timestamp (relative_time_ms), cpu_power_mw, gpu_power_mw, ane_power_mw, dram_power_mw, total_power_mw, phase. Frontend PowerSample TypeScript interface expects exactly these fields. ProfilingContext correctly extracts message.data and adds to powerSamples array. All types validate correctly with TypeScript compilation succeeding. The data flow from backend -> WebSocket -> frontend is fully aligned. This bug was likely fixed as a side effect of BUG-013 (timestamp fix).
+Files Modified: None (already fixed)
+
