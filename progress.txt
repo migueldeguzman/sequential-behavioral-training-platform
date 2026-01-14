@@ -3326,3 +3326,16 @@ Notes:
 - Future work suggestions: batch size sweeps, quantization comparisons, ANE utilization studies, MLX vs MPS energy comparison
 - Key insight: Same fundamental trends and relationships should hold, but absolute numbers will differ due to hardware architecture
 - Documentation file: docs/apple-silicon-comparison.md
+
+2026-01-14 - EP-091 - COMPLETE - MoE Energy Analysis
+- Enhanced model_features.py with MoE detection (num_experts, num_active_experts)
+- Added effective_params_per_token calculation for MoE models
+- Added MoE-specific fields to database schema (is_moe, num_experts, num_active_experts in profiling_runs)
+- Created moe_expert_activations table to track per-token expert activation patterns
+- Implemented analyze_moe_efficiency() function to compare MoE vs dense models
+- Implemented calculate_moe_expert_balance() for load balance analysis
+- Added backend endpoints: GET /api/profiling/moe-analysis/{run_id}, POST /api/profiling/moe-comparison
+- Created MoEAnalysis.tsx frontend component with parameter efficiency visualization
+- Expert utilization chart showing load balance across experts
+- Added getMoEAnalysis to api.ts for frontend integration
+- Based on TokenPowerBench research: MoE uses 2-3× less energy than dense with similar quality

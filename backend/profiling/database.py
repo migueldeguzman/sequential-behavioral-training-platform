@@ -132,6 +132,17 @@ class ProfileDatabase:
                 co2_grams REAL,
                 precision TEXT,
                 quantization_method TEXT,
+                num_layers INTEGER,
+                hidden_size INTEGER,
+                intermediate_size INTEGER,
+                num_attention_heads INTEGER,
+                num_key_value_heads INTEGER,
+                total_params INTEGER,
+                attention_mechanism TEXT,
+                is_moe BOOLEAN DEFAULT 0,
+                num_experts INTEGER,
+                num_active_experts INTEGER,
+                architecture_type TEXT,
                 status TEXT DEFAULT 'running',
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
@@ -236,6 +247,21 @@ class ProfileDatabase:
             )
         """)
 
+        # moe_expert_activations table - Per-token expert activation patterns for MoE models
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS moe_expert_activations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                token_id INTEGER NOT NULL,
+                layer_index INTEGER NOT NULL,
+                active_expert_ids TEXT NOT NULL,
+                num_active_experts INTEGER NOT NULL,
+                expert_weights TEXT,
+                routing_entropy REAL,
+                load_balance_loss REAL,
+                FOREIGN KEY (token_id) REFERENCES tokens(id) ON DELETE CASCADE
+            )
+        """)
+
         # Create indexes for query performance
 
         # Index on run_id for fast lookups
@@ -270,6 +296,12 @@ class ProfileDatabase:
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_deep_operation_metrics_component_metric_id
             ON deep_operation_metrics(component_metric_id)
+        """)
+
+        # Index on token_id for MoE expert activations
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_moe_expert_activations_token_id
+            ON moe_expert_activations(token_id)
         """)
 
         # Composite indexes for common queries

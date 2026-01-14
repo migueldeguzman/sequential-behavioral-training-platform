@@ -311,6 +311,38 @@ export const profilingApi = {
     return url;
   },
 
+  // Get MoE (Mixture of Experts) analysis for a profiling run
+  getMoEAnalysis: (id: string) =>
+    fetchApi<{
+      run_id: string;
+      model_name: string;
+      is_moe: boolean;
+      architecture_type?: string;
+      num_experts?: number;
+      num_active_experts?: number;
+      total_params?: number;
+      effective_params_per_token?: number;
+      param_efficiency?: number;
+      expert_activations?: Array<{
+        token_index: number;
+        token_text: string;
+        layer_index: number;
+        active_expert_ids: string;
+        num_active_experts: number;
+        expert_weights: string | null;
+        routing_entropy: number | null;
+        load_balance_loss: number | null;
+      }>;
+      load_balance?: {
+        expert_utilization: { [expertId: string]: { activation_count: number; utilization_percent: number } };
+        load_balance_score: number;
+        total_activations: number;
+        num_experts_used: number;
+        notes: string[];
+      };
+      notes: string[];
+    }>(`/api/profiling/moe-analysis/${id}`),
+
   // Delete profiling run and all related data
   deleteProfilingRun: (id: string) =>
     fetchApi<{ success: boolean; message: string; run_id: string }>(`/api/profiling/run/${id}`, {
@@ -413,4 +445,5 @@ export const api = {
   exportProfilingRun: profilingApi.exportProfilingRun,
   deleteProfilingRun: profilingApi.deleteProfilingRun,
   getArchitecturalAnalysis: profilingApi.getArchitecturalAnalysis,
+  getMoEAnalysis: profilingApi.getMoEAnalysis,
 };

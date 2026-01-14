@@ -4367,6 +4367,341 @@ async def get_quantization_comparison(
             db.close()
 
 
+@app.get("/api/profiling/moe-analysis/{run_id}")
+async def get_moe_analysis(run_id: str):
+    """
+    Get MoE (Mixture of Experts) analysis for a profiling run.
+
+    Based on TokenPowerBench research: MoE models use 2-3× less energy than
+    dense models with similar quality by activating only a subset of experts per token.
+
+    Args:
+        run_id: The profiling run ID to analyze
+
+    Returns:
+        {
+            "run_id": str,
+            "model_name": str,
+            "is_moe": bool,
+            "num_experts": int | None,
+            "num_active_experts": int | None,
+            "total_params": int,
+            "effective_params_per_token": int | None,
+            "param_efficiency": float,  # effective / total
+            "expert_activations": [
+                {
+                    "token_index": int,
+                    "token_text": str,
+                    "layer_index": int,
+                    "active_expert_ids": str,
+                    "num_active_experts": int,
+                    "expert_weights": str | None,
+                    "routing_entropy": float | None
+                }
+            ],
+            "load_balance": {
+                "expert_utilization": {
+                    "expert_0": {
+                        "activation_count": int,
+                        "utilization_percent": float
+                    },
+                    ...
+                },
+                "load_balance_score": float,  # 1.0 = perfect balance
+                "total_activations": int,
+                "num_experts_used": int,
+                "notes": [str]
+            },
+            "notes": [str]
+        }
+
+    Example usage:
+        GET /api/profiling/moe-analysis/run_abc123
+    """
+    db = None
+    try:
+        from profiling.model_features import calculate_moe_expert_balance
+
+        db = ProfileDatabase()
+        db.connect()
+
+        cursor = db.conn.cursor()
+
+        # Get run metadata
+        cursor.execute("""
+            SELECT
+                run_id,
+                model_name,
+                is_moe,
+                num_experts,
+                num_active_experts,
+                total_params,
+                architecture_type
+            FROM profiling_runs
+            WHERE run_id = ?
+        """, (run_id,))
+
+        run_row = cursor.fetchone()
+
+        if not run_row:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Profiling run {run_id} not found"
+            )
+
+        run_id_db, model_name, is_moe, num_experts, num_active_experts, total_params, architecture_type = run_row
+
+        if not is_moe:
+            return {
+                "run_id": run_id,
+                "model_name": model_name,
+                "is_moe": False,
+                "notes": [
+                    f"Model {model_name} is not a Mixture of Experts (MoE) model.",
+                    "MoE analysis is only applicable to models with expert routing mechanisms."
+                ]
+            }
+
+        # Get expert activations for this run
+        cursor.execute("""
+            SELECT
+                t.token_index,
+                t.token_text,
+                mea.layer_index,
+                mea.active_expert_ids,
+                mea.num_active_experts,
+                mea.expert_weights,
+                mea.routing_entropy,
+                mea.load_balance_loss
+            FROM tokens t
+            JOIN moe_expert_activations mea ON mea.token_id = t.id
+            WHERE t.run_id = ?
+            ORDER BY t.token_index, mea.layer_index
+        """, (run_id,))
+
+        expert_activation_rows = cursor.fetchall()
+
+        # Format expert activations
+        expert_activations = []
+        expert_activation_dicts = []
+
+        for row in expert_activation_rows:
+            token_index, token_text, layer_index, active_expert_ids, num_active, expert_weights, routing_entropy, load_balance_loss = row
+
+            activation_data = {
+                "token_index": token_index,
+                "token_text": token_text,
+                "layer_index": layer_index,
+                "active_expert_ids": active_expert_ids,
+                "num_active_experts": num_active,
+                "expert_weights": expert_weights,
+                "routing_entropy": round(routing_entropy, 4) if routing_entropy else None,
+                "load_balance_loss": round(load_balance_loss, 4) if load_balance_loss else None
+            }
+
+            expert_activations.append(activation_data)
+            expert_activation_dicts.append(activation_data)
+
+        # Calculate load balance metrics
+        load_balance = calculate_moe_expert_balance(expert_activation_dicts)
+
+        # Calculate parameter efficiency
+        effective_params_per_token = None
+        param_efficiency = None
+
+        if num_active_experts and num_experts and total_params:
+            # Rough estimate: assume experts are in FFN layers
+            # This is a simplification; actual calculation would need layer details
+            effective_params_per_token = int(total_params * (num_active_experts / num_experts))
+            param_efficiency = effective_params_per_token / total_params if total_params > 0 else 0.0
+
+        response = {
+            "run_id": run_id,
+            "model_name": model_name,
+            "is_moe": True,
+            "architecture_type": architecture_type,
+            "num_experts": num_experts,
+            "num_active_experts": num_active_experts,
+            "total_params": total_params,
+            "effective_params_per_token": effective_params_per_token,
+            "param_efficiency": round(param_efficiency, 4) if param_efficiency else None,
+            "expert_activations": expert_activations,
+            "load_balance": load_balance,
+            "notes": [
+                f"TokenPowerBench finding: MoE models typically use 2-3× less energy than dense models with similar quality.",
+                f"This model activates {num_active_experts} of {num_experts} experts per token.",
+                f"Effective parameters per token: {effective_params_per_token:,} vs {total_params:,} total ({param_efficiency*100:.1f}% utilization)" if effective_params_per_token else "Parameter efficiency data unavailable."
+            ]
+        }
+
+        return response
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get MoE analysis: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get MoE analysis: {str(e)}"
+        )
+    finally:
+        if db:
+            db.close()
+
+
+@app.post("/api/profiling/moe-comparison")
+async def compare_moe_to_dense(
+    moe_run_id: str,
+    dense_run_id: str
+):
+    """
+    Compare energy efficiency of MoE model vs dense model.
+
+    Based on TokenPowerBench research: MoE models use 2-3× less energy than
+    dense models with similar quality.
+
+    Args:
+        moe_run_id: Run ID for the MoE model
+        dense_run_id: Run ID for the dense model to compare against
+
+    Returns:
+        {
+            "moe_model": str,
+            "dense_model": str,
+            "metrics": {
+                "moe_energy_mj": float,
+                "dense_energy_mj": float,
+                "moe_total_params": int,
+                "moe_effective_params": int,
+                "dense_params": int,
+                "moe_param_efficiency": float,
+                "moe_energy_per_effective_param": float,
+                "dense_energy_per_param": float,
+                "moe_throughput_tokens_per_sec": float,
+                "dense_throughput_tokens_per_sec": float
+            },
+            "efficiency_gains": {
+                "energy_reduction_factor": float,  # e.g., 2.5 means MoE uses 2.5× less energy
+                "energy_savings_percent": float,
+                "throughput_improvement_factor": float
+            },
+            "notes": [str]
+        }
+
+    Example usage:
+        POST /api/profiling/moe-comparison
+        Body: {"moe_run_id": "run_abc123", "dense_run_id": "run_def456"}
+    """
+    db = None
+    try:
+        from profiling.model_features import analyze_moe_efficiency
+
+        db = ProfileDatabase()
+        db.connect()
+
+        cursor = db.conn.cursor()
+
+        # Get MoE run data
+        cursor.execute("""
+            SELECT
+                run_id,
+                model_name,
+                is_moe,
+                num_experts,
+                num_active_experts,
+                total_params,
+                total_energy_mj,
+                tokens_per_second,
+                token_count
+            FROM profiling_runs
+            WHERE run_id = ?
+        """, (moe_run_id,))
+
+        moe_row = cursor.fetchone()
+
+        if not moe_row:
+            raise HTTPException(
+                status_code=404,
+                detail=f"MoE run {moe_run_id} not found"
+            )
+
+        moe_run_id_db, moe_model_name, is_moe, num_experts, num_active_experts, moe_total_params, moe_energy, moe_throughput, moe_tokens = moe_row
+
+        if not is_moe:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Run {moe_run_id} is not a MoE model. MoE comparison requires a MoE model."
+            )
+
+        # Calculate effective params for MoE
+        moe_effective_params = moe_total_params
+        if num_active_experts and num_experts and num_experts > 0:
+            moe_effective_params = int(moe_total_params * (num_active_experts / num_experts))
+
+        moe_run = {
+            "model_name": moe_model_name,
+            "num_experts": num_experts,
+            "num_active_experts": num_active_experts,
+            "total_params": moe_total_params,
+            "effective_params_per_token": moe_effective_params,
+            "total_energy_mj": moe_energy,
+            "tokens_per_second": moe_throughput,
+            "token_count": moe_tokens
+        }
+
+        # Get dense run data
+        cursor.execute("""
+            SELECT
+                run_id,
+                model_name,
+                is_moe,
+                total_params,
+                total_energy_mj,
+                tokens_per_second,
+                token_count
+            FROM profiling_runs
+            WHERE run_id = ?
+        """, (dense_run_id,))
+
+        dense_row = cursor.fetchone()
+
+        if not dense_row:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Dense run {dense_run_id} not found"
+            )
+
+        dense_run_id_db, dense_model_name, dense_is_moe, dense_total_params, dense_energy, dense_throughput, dense_tokens = dense_row
+
+        if dense_is_moe:
+            logger.warning(f"Run {dense_run_id} is marked as MoE model but being used as dense comparison")
+
+        dense_run = {
+            "model_name": dense_model_name,
+            "total_params": dense_total_params,
+            "total_energy_mj": dense_energy,
+            "tokens_per_second": dense_throughput,
+            "token_count": dense_tokens
+        }
+
+        # Perform comparison analysis
+        comparison = analyze_moe_efficiency(moe_run, dense_run)
+
+        return comparison
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to compare MoE to dense: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to compare MoE to dense: {str(e)}"
+        )
+    finally:
+        if db:
+            db.close()
+
+
 # WebSocket connection manager for profiling streams
 class ProfilingConnectionManager:
     """Manages WebSocket connections for real-time profiling data streaming."""

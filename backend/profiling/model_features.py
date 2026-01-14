@@ -32,6 +32,8 @@ class ModelFeatures:
     # Architecture type detection
     attention_mechanism: str  # "MHA", "GQA", or "MQA"
     is_moe: bool  # Mixture of Experts detection
+    num_experts: Optional[int]  # Total number of experts (for MoE models)
+    num_active_experts: Optional[int]  # Number of experts activated per token (for MoE models)
 
     # Model metadata
     model_name: str
@@ -44,6 +46,7 @@ class ModelFeatures:
     # Derived metrics
     attention_to_ffn_ratio: float  # Ratio of attention params to FFN params
     params_per_layer: int
+    effective_params_per_token: Optional[int]  # For MoE: active_experts * expert_params
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert features to dictionary for storage."""
@@ -59,12 +62,15 @@ class ModelFeatures:
             "ffn_params_per_layer": self.ffn_params_per_layer,
             "attention_mechanism": self.attention_mechanism,
             "is_moe": self.is_moe,
+            "num_experts": self.num_experts,
+            "num_active_experts": self.num_active_experts,
             "model_name": self.model_name,
             "architecture_type": self.architecture_type,
             "precision": self.precision,
             "quantization_method": self.quantization_method,
             "attention_to_ffn_ratio": self.attention_to_ffn_ratio,
             "params_per_layer": self.params_per_layer,
+            "effective_params_per_token": self.effective_params_per_token,
         }
 
 
@@ -102,7 +108,7 @@ def extract_model_features(model: torch.nn.Module, model_name: str = "unknown") 
         attention_mechanism = "MHA"
 
     # Detect if model is Mixture of Experts
-    is_moe = _detect_moe(model, config)
+    is_moe, num_experts, num_active_experts = _detect_moe(model, config)
 
     # Count parameters
     total_params = sum(p.numel() for p in model.parameters())
@@ -117,6 +123,15 @@ def extract_model_features(model: torch.nn.Module, model_name: str = "unknown") 
     params_per_layer = attention_params_per_layer + ffn_params_per_layer
     attention_to_ffn_ratio = attention_params_per_layer / ffn_params_per_layer if ffn_params_per_layer > 0 else 0.0
 
+    # Calculate effective parameters per token for MoE models
+    effective_params_per_token = None
+    if is_moe and num_active_experts is not None and num_experts is not None and num_experts > 0:
+        # For MoE: only active experts are used per token
+        # Effective params = embedding + (attention + active_expert_ffn) * num_layers
+        expert_ffn_params = ffn_params_per_layer // num_experts if num_experts > 0 else ffn_params_per_layer
+        active_ffn_params = expert_ffn_params * num_active_experts
+        effective_params_per_token = embedding_params + (attention_params_per_layer + active_ffn_params) * num_layers
+
     return ModelFeatures(
         num_layers=num_layers,
         hidden_size=hidden_size,
@@ -129,12 +144,15 @@ def extract_model_features(model: torch.nn.Module, model_name: str = "unknown") 
         ffn_params_per_layer=ffn_params_per_layer,
         attention_mechanism=attention_mechanism,
         is_moe=is_moe,
+        num_experts=num_experts,
+        num_active_experts=num_active_experts,
         model_name=model_name,
         architecture_type=architecture_type,
         precision=precision,
         quantization_method=quantization_method,
         attention_to_ffn_ratio=attention_to_ffn_ratio,
         params_per_layer=params_per_layer,
+        effective_params_per_token=effective_params_per_token,
     )
 
 
@@ -159,18 +177,31 @@ def _detect_architecture_type(config) -> str:
     return architecture_map.get(model_type, model_type)
 
 
-def _detect_moe(model: torch.nn.Module, config) -> bool:
-    """Detect if the model uses Mixture of Experts."""
+def _detect_moe(model: torch.nn.Module, config) -> tuple[bool, Optional[int], Optional[int]]:
+    """
+    Detect if the model uses Mixture of Experts.
+
+    Returns:
+        Tuple of (is_moe, num_experts, num_active_experts)
+    """
     # Check for MoE-specific config attributes
-    if hasattr(config, "num_local_experts") or hasattr(config, "num_experts"):
-        return True
+    if hasattr(config, "num_local_experts"):
+        num_experts = getattr(config, "num_local_experts")
+        num_active_experts = getattr(config, "num_experts_per_tok", None)
+        return True, num_experts, num_active_experts
+
+    if hasattr(config, "num_experts"):
+        num_experts = getattr(config, "num_experts")
+        num_active_experts = getattr(config, "num_experts_per_tok", None) or getattr(config, "top_k", None)
+        return True, num_experts, num_active_experts
 
     # Check for MoE in module names
     for name, module in model.named_modules():
         if "moe" in name.lower() or "expert" in name.lower():
-            return True
+            # Found MoE but couldn't determine expert counts from config
+            return True, None, None
 
-    return False
+    return False, None, None
 
 
 def _detect_quantization(model: torch.nn.Module, config) -> tuple[str, Optional[str]]:
@@ -418,3 +449,134 @@ def compare_quantization_levels(runs_by_precision: Dict[str, Any]) -> Dict[str, 
     )
 
     return comparison
+
+
+def analyze_moe_efficiency(moe_run: Dict[str, Any], dense_run: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Compare energy efficiency of MoE model vs equivalent dense model.
+
+    Args:
+        moe_run: Profiling run data for MoE model
+        dense_run: Profiling run data for dense model with similar quality
+
+    Returns:
+        Analysis showing MoE efficiency gains
+
+    Reference: TokenPowerBench paper - MoE uses 2-3× less energy than dense with similar quality
+    """
+    analysis = {
+        "moe_model": moe_run.get("model_name", "Unknown"),
+        "dense_model": dense_run.get("model_name", "Unknown"),
+        "metrics": {},
+        "efficiency_gains": {},
+        "notes": []
+    }
+
+    # Energy comparison
+    moe_energy = moe_run.get("total_energy_mj", 0)
+    dense_energy = dense_run.get("total_energy_mj", 0)
+    energy_ratio = dense_energy / moe_energy if moe_energy > 0 else 0
+
+    analysis["metrics"]["moe_energy_mj"] = moe_energy
+    analysis["metrics"]["dense_energy_mj"] = dense_energy
+    analysis["efficiency_gains"]["energy_reduction_factor"] = energy_ratio
+    analysis["efficiency_gains"]["energy_savings_percent"] = ((dense_energy - moe_energy) / dense_energy * 100) if dense_energy > 0 else 0
+
+    # Parameter efficiency
+    moe_total_params = moe_run.get("total_params", 0)
+    moe_effective_params = moe_run.get("effective_params_per_token", moe_total_params)
+    dense_params = dense_run.get("total_params", 0)
+
+    analysis["metrics"]["moe_total_params"] = moe_total_params
+    analysis["metrics"]["moe_effective_params"] = moe_effective_params
+    analysis["metrics"]["dense_params"] = dense_params
+    analysis["metrics"]["moe_param_efficiency"] = moe_effective_params / moe_total_params if moe_total_params > 0 else 0
+
+    # Energy per effective parameter
+    moe_energy_per_param = moe_energy / moe_effective_params if moe_effective_params > 0 else 0
+    dense_energy_per_param = dense_energy / dense_params if dense_params > 0 else 0
+
+    analysis["metrics"]["moe_energy_per_effective_param"] = moe_energy_per_param
+    analysis["metrics"]["dense_energy_per_param"] = dense_energy_per_param
+
+    # Throughput comparison
+    moe_throughput = moe_run.get("tokens_per_second", 0)
+    dense_throughput = dense_run.get("tokens_per_second", 0)
+    throughput_ratio = moe_throughput / dense_throughput if dense_throughput > 0 else 0
+
+    analysis["metrics"]["moe_throughput_tokens_per_sec"] = moe_throughput
+    analysis["metrics"]["dense_throughput_tokens_per_sec"] = dense_throughput
+    analysis["efficiency_gains"]["throughput_improvement_factor"] = throughput_ratio
+
+    # Add context notes
+    analysis["notes"].append(
+        f"TokenPowerBench finding: MoE models typically use 2-3× less energy than dense models with similar quality."
+    )
+    analysis["notes"].append(
+        f"This analysis shows {energy_ratio:.2f}× energy reduction with MoE vs dense model."
+    )
+    analysis["notes"].append(
+        f"MoE activates only {moe_run.get('num_active_experts', 'N/A')} of {moe_run.get('num_experts', 'N/A')} experts per token, "
+        f"reducing effective parameters to {moe_effective_params:,} vs {moe_total_params:,} total."
+    )
+
+    return analysis
+
+
+def calculate_moe_expert_balance(expert_activations: list[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Analyze load balance across experts in MoE model.
+
+    Args:
+        expert_activations: List of expert activation records per token
+
+    Returns:
+        Load balance metrics including entropy and expert utilization
+    """
+    if not expert_activations:
+        return {
+            "expert_utilization": {},
+            "load_balance_score": 0.0,
+            "notes": ["No expert activation data available"]
+        }
+
+    # Count activations per expert
+    expert_counts = {}
+    total_activations = 0
+
+    for activation in expert_activations:
+        active_experts = activation.get("active_expert_ids", "").split(",")
+        for expert_id in active_experts:
+            if expert_id:
+                expert_counts[expert_id] = expert_counts.get(expert_id, 0) + 1
+                total_activations += 1
+
+    # Calculate utilization per expert
+    expert_utilization = {}
+    for expert_id, count in expert_counts.items():
+        expert_utilization[expert_id] = {
+            "activation_count": count,
+            "utilization_percent": (count / total_activations * 100) if total_activations > 0 else 0
+        }
+
+    # Calculate load balance score (1.0 = perfect balance, 0.0 = unbalanced)
+    num_experts = len(expert_counts)
+    if num_experts > 0:
+        expected_per_expert = total_activations / num_experts
+        variance = sum((count - expected_per_expert) ** 2 for count in expert_counts.values()) / num_experts
+        std_dev = variance ** 0.5
+        # Normalize to 0-1 scale (lower std_dev = better balance)
+        load_balance_score = max(0.0, 1.0 - (std_dev / expected_per_expert)) if expected_per_expert > 0 else 0.0
+    else:
+        load_balance_score = 0.0
+
+    return {
+        "expert_utilization": expert_utilization,
+        "load_balance_score": load_balance_score,
+        "total_activations": total_activations,
+        "num_experts_used": num_experts,
+        "notes": [
+            f"Load balance score: {load_balance_score:.2f} (1.0 = perfect balance)",
+            f"Total activations across {num_experts} experts: {total_activations}"
+        ]
+    }

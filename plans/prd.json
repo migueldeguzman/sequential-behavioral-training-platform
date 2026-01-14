@@ -1499,7 +1499,7 @@
       "title": "MoE Energy Analysis",
       "description": "Special analysis for Mixture-of-Experts models showing efficiency gains",
       "priority": "LOW",
-      "passes": false,
+      "passes": true,
       "reference": "TokenPowerBench: MoE uses 2-3\u00d7 less energy than dense with similar quality",
       "steps": [
         "Detect MoE architecture in model_features",
