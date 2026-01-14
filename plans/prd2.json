@@ -541,7 +541,7 @@
       "title": "Add inference engine detection",
       "description": "Database has inference_engine field but profiling doesn't detect what engine is being used (transformers, MLX, etc.).",
       "priority": "low",
-      "passes": false,
+      "passes": true,
       "debug_steps": {
         "review": "Read database.py schema - has inference_engine field. Read main.py profiled_generate - uses transformers but doesn't store this.",
         "test": "Check profiling run. inference_engine is null.",
