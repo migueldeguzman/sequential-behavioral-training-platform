@@ -2953,3 +2953,46 @@ Notes:
 - Tests verify all core functionality without requiring macOS privileges
 - Suitable for CI/CD pipelines on any platform
 ---
+
+---
+Date: 2026-01-14
+Feature: EP-093 - Joules Per Token Metric Standardization
+Status: Complete
+Description: Standardized on J/t as primary energy efficiency metric
+
+Implementation Details:
+Backend Changes:
+- Updated /api/profiling/runs endpoint to include J/t metrics
+  * joules_per_token, joules_per_input_token, joules_per_output_token
+  * tokens_per_joule (inverse efficiency metric)
+- Changed default sort to 'joules_per_token' (lower is better)
+- Added J/t as sort option alongside date, duration, energy
+- Sorting handles ascending order properly for J/t
+
+Frontend Changes:
+- Updated RunList component to display J/t prominently
+  * formatJoulesPerToken() helper with unit formatting (µJ/t, mJ/t, J/t)
+  * J/t shown first in metrics grid with green highlight
+  * Maps 'efficiency' sort option to 'joules_per_token' API call
+- Updated TypeScript types:
+  * ProfilingRunsFilter.sort_by includes 'joules_per_token'
+  * ProfilingRun includes token count aliases
+- EfficiencyMetricsCard already displays J/t as primary metric
+
+Files Modified:
+- backend/main.py: Lines 1851-1993
+- src/components/profiling/RunList.tsx
+- src/types/index.ts
+
+Build Verification:
+- npm run build: SUCCESS
+- All TypeScript compilation passed
+- No runtime errors
+
+Notes:
+- J/t is now the default sort metric across the application
+- Lower J/t values indicate better energy efficiency
+- Implementation follows TokenPowerBench standardization
+- Enables cross-model energy efficiency comparisons
+- Database layer already had J/t calculations implemented
+---

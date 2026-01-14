@@ -1533,7 +1533,7 @@
       "title": "Joules Per Token Metric Standardization",
       "description": "Standardize on Joules per token (J/t) as primary energy metric",
       "priority": "HIGH",
-      "passes": false,
+      "passes": true,
       "reference": "TokenPowerBench: Uses J/t as primary metric; enables cross-model comparison",
       "steps": [
         "Calculate joules_per_token = total_energy_mj / 1000 / total_tokens",

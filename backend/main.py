@@ -1857,7 +1857,7 @@ async def get_profiling_runs(
     experiment: Optional[str] = Query(None, description="Filter by experiment name"),
     limit: int = Query(100, ge=1, le=1000, description="Maximum number of results"),
     offset: int = Query(0, ge=0, description="Number of results to skip"),
-    sort_by: str = Query("date", description="Sort by: date, duration, energy"),
+    sort_by: str = Query("joules_per_token", description="Sort by: date, duration, energy, joules_per_token (default)"),
 ):
     """
     List profiling runs with optional filtering and pagination.
@@ -1870,9 +1870,9 @@ async def get_profiling_runs(
     - experiment: Filter by experiment name
     - limit: Maximum number of results (1-1000, default 100)
     - offset: Number of results to skip for pagination (default 0)
-    - sort_by: Sort by date (default), duration, or energy
+    - sort_by: Sort by date, duration, energy, or joules_per_token (default)
 
-    Returns list with summary metrics per run.
+    Returns list with summary metrics per run including J/t (Joules per token) as primary efficiency metric.
     """
     from profiling.database import ProfileDatabase
 
@@ -1909,6 +1909,13 @@ async def get_profiling_runs(
                     for phase in summary.get("phase_breakdown", [])
                 )
 
+                # Extract J/t metrics from efficiency_metrics
+                efficiency = summary.get("efficiency_metrics", {})
+                joules_per_token = efficiency.get("joules_per_token", 0)
+                joules_per_input_token = efficiency.get("joules_per_input_token", 0)
+                joules_per_output_token = efficiency.get("joules_per_output_token", 0)
+                tokens_per_joule = efficiency.get("tokens_per_joule", 0)
+
                 runs_with_summary.append({
                     "run_id": run["run_id"],
                     "timestamp": run["timestamp"],
@@ -1921,8 +1928,15 @@ async def get_profiling_runs(
                     "status": run.get("status"),
                     "total_duration_ms": total_duration_ms,
                     "total_energy_mj": total_energy_mj,
-                    "input_tokens": run.get("input_tokens"),
-                    "output_tokens": run.get("output_tokens"),
+                    "input_token_count": run.get("input_token_count"),
+                    "output_token_count": run.get("output_token_count"),
+                    "token_count": run.get("token_count"),
+                    "tokens_per_second": run.get("tokens_per_second"),
+                    # J/t metrics (primary efficiency metrics)
+                    "joules_per_token": joules_per_token,
+                    "joules_per_input_token": joules_per_input_token,
+                    "joules_per_output_token": joules_per_output_token,
+                    "tokens_per_joule": tokens_per_joule,
                 })
             else:
                 # Fallback if summary is not available
@@ -1938,8 +1952,14 @@ async def get_profiling_runs(
                     "status": run.get("status"),
                     "total_duration_ms": None,
                     "total_energy_mj": None,
-                    "input_tokens": None,
-                    "output_tokens": None,
+                    "input_token_count": None,
+                    "output_token_count": None,
+                    "token_count": None,
+                    "tokens_per_second": None,
+                    "joules_per_token": None,
+                    "joules_per_input_token": None,
+                    "joules_per_output_token": None,
+                    "tokens_per_joule": None,
                 })
 
         # Sort results if requested
@@ -1953,7 +1973,24 @@ async def get_profiling_runs(
                 key=lambda x: x.get("total_energy_mj") or 0,
                 reverse=True
             )
-        # Default sort by date is already handled by database query
+        elif sort_by == "joules_per_token" and runs_with_summary:
+            # Sort by J/t (lower is better = more efficient)
+            runs_with_summary.sort(
+                key=lambda x: x.get("joules_per_token") or float('inf'),
+                reverse=False
+            )
+        elif sort_by == "date" and runs_with_summary:
+            # Sort by date (already handled by database, but apply here for consistency)
+            runs_with_summary.sort(
+                key=lambda x: x.get("timestamp") or "",
+                reverse=True
+            )
+        # Default: sort by joules_per_token (lower is better)
+        elif runs_with_summary:
+            runs_with_summary.sort(
+                key=lambda x: x.get("joules_per_token") or float('inf'),
+                reverse=False
+            )
 
         return {
             "runs": runs_with_summary,

@@ -34,10 +34,13 @@ export default function RunList({ onSelectRun, selectedRunId }: RunListProps) {
     setLoading(true);
     setError(null);
 
+    // Map 'efficiency' to 'joules_per_token' for API
+    const apiSortBy = sortBy === 'efficiency' ? 'joules_per_token' : sortBy;
+
     const filter: ProfilingRunsFilter = {
       limit: pageSize,
       offset: currentPage * pageSize,
-      sort_by: sortBy,
+      sort_by: apiSortBy,
       sort_order: sortOrder,
     };
 
@@ -108,6 +111,20 @@ export default function RunList({ onSelectRun, selectedRunId }: RunListProps) {
       return `${(ms / 1000).toFixed(2)} s`;
     }
     return `${ms.toFixed(0)} ms`;
+  };
+
+  const formatJoulesPerToken = (jpt: number | null | undefined) => {
+    if (jpt === null || jpt === undefined || jpt === 0) return 'N/A';
+
+    // Display in millijoules per token (mJ/t) for better readability
+    const mjpt = jpt * 1000;
+    if (mjpt < 1) {
+      return `${(mjpt * 1000).toFixed(1)} µJ/t`;
+    } else if (mjpt < 1000) {
+      return `${mjpt.toFixed(2)} mJ/t`;
+    } else {
+      return `${jpt.toFixed(3)} J/t`;
+    }
   };
 
   const truncatePrompt = (prompt: string, maxLength: number = 60) => {
@@ -247,8 +264,14 @@ export default function RunList({ onSelectRun, selectedRunId }: RunListProps) {
                 {truncatePrompt(run.prompt)}
               </p>
 
-              {/* Metrics */}
-              <div className="grid grid-cols-3 gap-2 text-xs mb-2">
+              {/* Metrics - J/t prominently displayed first */}
+              <div className="grid grid-cols-4 gap-2 text-xs mb-2">
+                <div className="col-span-1">
+                  <span className="text-gray-400">J/t: </span>
+                  <span className="text-green-400 font-semibold">
+                    {formatJoulesPerToken(run.joules_per_token)}
+                  </span>
+                </div>
                 <div>
                   <span className="text-gray-400">Duration: </span>
                   <span className="text-white">{formatDuration(run.total_duration_ms)}</span>
@@ -260,7 +283,7 @@ export default function RunList({ onSelectRun, selectedRunId }: RunListProps) {
                 <div>
                   <span className="text-gray-400">Tokens: </span>
                   <span className="text-white">
-                    {run.input_tokens + run.output_tokens}
+                    {(run.input_token_count || 0) + (run.output_token_count || 0)}
                   </span>
                 </div>
               </div>

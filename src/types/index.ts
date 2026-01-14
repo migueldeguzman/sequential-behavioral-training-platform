@@ -227,6 +227,11 @@ export interface ProfilingRun {
   total_energy_mj: number;
   input_tokens: number;
   output_tokens: number;
+  // Aliases for consistency with database fields
+  input_token_count?: number;
+  output_token_count?: number;
+  token_count?: number;
+  tokens_per_second?: number;
   profiling_depth: string; // module/deep
   tags?: string[];
   experiment_name?: string;
@@ -466,6 +471,6 @@ export interface ProfilingRunsFilter {
   experiment?: string;
   limit?: number;
   offset?: number;
-  sort_by?: 'date' | 'duration' | 'energy' | 'efficiency';
+  sort_by?: 'date' | 'duration' | 'energy' | 'efficiency' | 'joules_per_token';
   sort_order?: 'asc' | 'desc';
 }
