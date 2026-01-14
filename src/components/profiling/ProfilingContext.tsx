@@ -11,6 +11,7 @@ import type {
 } from '@/types';
 import { useProfilingWebSocket, type ConnectionState } from '@/lib/profilingWebsocket';
 import { api } from '@/lib/api';
+import { API_BASE_URL } from '@/lib/config';
 
 // Current section info
 export interface CurrentSection {
@@ -245,7 +246,24 @@ export function ProfilingProvider({ children }: { children: React.ReactNode }) {
   }, [wsConnect]);
 
   // Stop profiling action
-  const stopProfiling = useCallback(() => {
+  const stopProfiling = useCallback(async () => {
+    try {
+      // Call backend to cancel profiling
+      const response = await fetch(`${API_BASE_URL}/api/profiling/cancel`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        console.error('Failed to cancel profiling:', error);
+      }
+    } catch (error) {
+      console.error('Error cancelling profiling:', error);
+    }
+
     setState((prev) => ({
       ...prev,
       isRunning: false,

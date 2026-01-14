@@ -463,7 +463,7 @@
       "title": "Add profiling cancellation support",
       "description": "No way to cancel profiling mid-run. User must wait for generation to complete or restart server.",
       "priority": "medium",
-      "passes": false,
+      "passes": true,
       "debug_steps": {
         "review": "Read backend/main.py profiled_generate. No cancellation check in generation loop. Read frontend - no cancel button.",
         "test": "Start profiling with long max_length. No way to stop it early.",

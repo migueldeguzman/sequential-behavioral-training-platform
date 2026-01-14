@@ -111,6 +111,12 @@ training_state = {
     "job_id": None,
 }
 
+# Profiling state
+profiling_state = {
+    "is_running": False,
+    "should_cancel": False,
+}
+
 # WebSocket connections
 active_connections: list[WebSocket] = []
 
@@ -1795,8 +1801,17 @@ async def profiled_generate(request: ProfiledGenerateRequest):
     # Capture the main event loop for thread-safe async operations
     main_loop = asyncio.get_running_loop()
 
+    # Check if another profiling session is already running
+    if profiling_state["is_running"]:
+        raise HTTPException(status_code=429, detail="A profiling session is already running. Please wait for it to complete or cancel it first.")
+
+    # Set profiling state
+    profiling_state["is_running"] = True
+    profiling_state["should_cancel"] = False
+
     model_dir = Path(request.model_path)
     if not model_dir.exists():
+        profiling_state["is_running"] = False
         raise HTTPException(status_code=404, detail=f"Model not found: {request.model_path}")
 
     # Track which profiling components are available
@@ -2131,6 +2146,11 @@ async def profiled_generate(request: ProfiledGenerateRequest):
 
                 with session.section("decode", phase="decode"):
                     for token_text in streamer:
+                        # Check for cancellation
+                        if profiling_state["should_cancel"]:
+                            logger.info("Profiling cancelled by user during generation")
+                            break
+
                         if token_text:
                             current_token_time = time.time()
 
@@ -2201,6 +2221,10 @@ async def profiled_generate(request: ProfiledGenerateRequest):
 
                 # Prefill + Decode phase combined (non-streaming)
                 with session.section("prefill", phase="prefill"):
+                    # Check for cancellation before generation
+                    if profiling_state["should_cancel"]:
+                        logger.info("Profiling cancelled by user before generation")
+                        raise Exception("Profiling cancelled by user")
                     generation_start = time.time()
 
                 with session.section("decode", phase="decode"):
@@ -2323,10 +2347,18 @@ async def profiled_generate(request: ProfiledGenerateRequest):
             result["warnings"] = warnings
             result["message"] = "Inference completed with limited profiling data"
 
+        # Clear profiling state
+        profiling_state["is_running"] = False
+        profiling_state["should_cancel"] = False
+
         return result
 
     except Exception as e:
         logger.error(f"Profiled generation failed: {str(e)}")
+
+        # Clear profiling state
+        profiling_state["is_running"] = False
+        profiling_state["should_cancel"] = False
 
         # Notify frontend of profiling error via WebSocket
         try:
@@ -2343,6 +2375,36 @@ async def profiled_generate(request: ProfiledGenerateRequest):
             logger.error(f"Failed to send error notification via WebSocket: {ws_error}")
 
         raise HTTPException(status_code=500, detail=f"Profiled generation failed: {str(e)}")
+
+
+@app.post("/api/profiling/cancel")
+async def cancel_profiling():
+    """
+    Cancel the currently running profiling session.
+
+    Sets a cancellation flag that will be checked during generation,
+    allowing graceful termination of profiling.
+    """
+    if not profiling_state["is_running"]:
+        raise HTTPException(status_code=400, detail="No profiling session is currently running")
+
+    profiling_state["should_cancel"] = True
+    logger.info("Profiling cancellation requested")
+
+    # Broadcast cancellation event to frontend
+    try:
+        await profiling_manager.broadcast({
+            "type": ProfilingMessageType.ERROR,
+            "timestamp": time.time() * 1000,
+            "data": {
+                "error": "Profiling cancelled by user",
+                "message": "Profiling session was cancelled"
+            }
+        })
+    except Exception as e:
+        logger.error(f"Failed to broadcast cancellation event: {e}")
+
+    return {"status": "cancelling", "message": "Profiling cancellation requested"}
 
 
 @app.get("/api/profiling/powermetrics/status")
