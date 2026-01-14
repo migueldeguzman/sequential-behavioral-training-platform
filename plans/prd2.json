@@ -307,7 +307,7 @@
       "title": "Add input token count tracking",
       "description": "Profiling should track input token count separately from output token count for accurate per-token energy analysis.",
       "priority": "medium",
-      "passes": false,
+      "passes": true,
       "debug_steps": {
         "review": "Read backend/main.py profiled_generate. Check if input_token_count is calculated and stored. Look for tokenizer input length tracking.",
         "test": "Check profiling run in database. input_token_count may be null or 0.",

@@ -2007,6 +2007,8 @@ async def profiled_generate(request: ProfiledGenerateRequest):
             # Pre-inference phase
             with session.section("tokenization", phase="pre_inference"):
                 inputs = tokenizer(request.prompt, return_tensors="pt", padding=True)
+                # Track input token count for accurate per-token energy analysis
+                session.input_token_count = len(inputs['input_ids'][0])
 
             with session.section("tensor_transfer", phase="pre_inference"):
                 inputs = {k: v.to(device) for k, v in inputs.items()}
@@ -2091,6 +2093,9 @@ async def profiled_generate(request: ProfiledGenerateRequest):
 
                 # Wait for generation to complete
                 generation_thread.join()
+
+                # Track output token count for accurate per-token energy analysis
+                session.output_token_count = len(generated_tokens)
             else:
                 # Use non-streaming generation for incompatible models (e.g., StableLM)
                 logger.info("Using non-streaming generation for model compatibility")
@@ -2151,6 +2156,9 @@ async def profiled_generate(request: ProfiledGenerateRequest):
                         energy_mj=avg_power_mw * total_duration_ms / 1000.0,
                         avg_power_mw=avg_power_mw
                     )
+
+                    # Track output token count for accurate per-token energy analysis
+                    session.output_token_count = num_tokens
 
             # Post-inference phase
             response = "".join(generated_tokens)

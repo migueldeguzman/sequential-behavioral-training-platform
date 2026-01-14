@@ -87,6 +87,8 @@ class ProfilingSession:
     sections: List[SectionTiming] = field(default_factory=list)
     response: Optional[str] = None
     baseline_metrics: Optional[Dict[str, float]] = None
+    input_token_count: Optional[int] = None
+    output_token_count: Optional[int] = None
 
     # References to profiling components
     power_monitor: Optional[PowerMonitor] = None
@@ -420,20 +422,16 @@ class InferencePipelineProfiler:
         # Calculate prefill vs decode energy from sections
         prefill_energy_mj = 0.0
         decode_energy_mj = 0.0
-        input_token_count = 0
-        output_token_count = 0
+
+        # Use token counts from session (set during tokenization/generation)
+        input_token_count = session.input_token_count or 0
+        output_token_count = session.output_token_count or 0
 
         for section in session.sections:
             if section.phase == "prefill" and section.energy_mj:
                 prefill_energy_mj += section.energy_mj
-                # Count input tokens from prefill phase (usually one section for all input tokens)
-                if "prefill" in section.section_name or "embedding" in section.section_name:
-                    input_token_count = 1  # Will be updated below
             elif section.phase == "decode" and section.energy_mj:
                 decode_energy_mj += section.energy_mj
-                # Count output tokens from decode phase
-                if "token_" in section.section_name:
-                    output_token_count += 1
 
         # Calculate per-token energy metrics
         energy_per_input_token_mj = prefill_energy_mj / input_token_count if input_token_count > 0 else 0.0
