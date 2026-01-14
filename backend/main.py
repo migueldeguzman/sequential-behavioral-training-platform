@@ -1773,6 +1773,7 @@ class ProfiledGenerateRequest(BaseModel):
     max_length: int = 100
     batch_size: int = 1  # Batch size for throughput analysis
     device: str = "auto"  # Device selection: "auto", "cpu", "cuda", "mps"
+    warmup: bool = False  # Run warmup inference before profiling to eliminate compilation costs
 
 
 @app.post("/api/profiling/generate")
@@ -1941,6 +1942,57 @@ async def profiled_generate(request: ProfiledGenerateRequest):
         except Exception as e:
             logger.warning(f"Failed to extract model features: {e}")
             model_features = None
+
+        # Warmup run to eliminate JIT compilation and caching costs (BUG-048)
+        # First inference run often includes one-time costs like kernel compilation,
+        # cache initialization, and other overhead. Running a warmup ensures the
+        # profiled run measures steady-state performance without these transients.
+        if request.warmup:
+            logger.info("Running warmup inference to eliminate compilation costs...")
+            await profiling_manager.broadcast({
+                "type": ProfilingMessageType.MODEL_LOADING,
+                "timestamp": time.time() * 1000,
+                "data": {
+                    "status": "warmup",
+                    "model_name": model_name,
+                    "model_path": request.model_path,
+                    "message": "Running warmup inference..."
+                }
+            })
+
+            try:
+                # Tokenize a short warmup prompt
+                warmup_prompt = "Hello world"
+                warmup_inputs = tokenizer([warmup_prompt], return_tensors="pt", padding=True)
+                warmup_inputs = {k: v.to(device) for k, v in warmup_inputs.items()}
+
+                # Run a short generation to warm up caches and trigger compilation
+                # Use generate() rather than forward() to warm up the full generation path
+                with torch.no_grad():
+                    _ = model.generate(
+                        input_ids=warmup_inputs["input_ids"],
+                        attention_mask=warmup_inputs["attention_mask"],
+                        max_new_tokens=5,  # Just a few tokens to trigger compilation
+                        do_sample=False,  # Deterministic for warmup
+                        pad_token_id=tokenizer.pad_token_id,
+                        eos_token_id=tokenizer.eos_token_id,
+                    )
+
+                logger.info("Warmup inference completed successfully")
+                await profiling_manager.broadcast({
+                    "type": ProfilingMessageType.MODEL_LOADING,
+                    "timestamp": time.time() * 1000,
+                    "data": {
+                        "status": "warmup_complete",
+                        "model_name": model_name,
+                        "model_path": request.model_path,
+                        "message": "Warmup complete - ready for profiling"
+                    }
+                })
+            except Exception as e:
+                logger.warning(f"Warmup inference failed: {e}")
+                warnings.append(f"Warmup failed: {str(e)}")
+                # Continue with profiling even if warmup fails
 
         # Initialize profilers with graceful fallbacks
         layer_profiler = None

@@ -619,7 +619,7 @@
       "title": "Add warmup run option",
       "description": "First inference run is often slower due to compilation and cache warming. Should have option for warmup run before measured profiling.",
       "priority": "low",
-      "passes": false,
+      "passes": true,
       "debug_steps": {
         "review": "Read backend/main.py profiled_generate. No warmup option. First run includes one-time costs.",
         "test": "First profiling run is slower than subsequent runs with same model/prompt.",
