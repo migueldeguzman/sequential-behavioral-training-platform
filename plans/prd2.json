@@ -359,7 +359,7 @@
       "title": "Add GPU power tracking for NVIDIA GPUs",
       "description": "PowerMonitor only tracks Apple Silicon power via powermetrics. No support for NVIDIA GPU power tracking via nvidia-smi.",
       "priority": "low",
-      "passes": false,
+      "passes": true,
       "debug_steps": {
         "review": "Read backend/profiling/power_monitor.py. Uses macOS powermetrics command. No nvidia-smi integration.",
         "test": "Run on system with NVIDIA GPU. GPU power shows as 0.",

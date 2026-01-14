@@ -12,6 +12,7 @@ import time
 import plistlib
 import threading
 import os
+import platform
 from typing import Optional, List, Dict, Any
 from dataclasses import dataclass
 from datetime import datetime
@@ -515,3 +516,335 @@ class PowerMonitor:
         if self._running:
             self.stop()
         return False
+
+
+class NvidiaPowerMonitor:
+    """
+    Power monitor for NVIDIA GPUs using nvidia-smi.
+
+    Provides similar interface to PowerMonitor but uses nvidia-smi
+    to track GPU power consumption on systems with NVIDIA GPUs.
+
+    Usage:
+        monitor = NvidiaPowerMonitor(sample_interval_ms=100)
+        monitor.start()
+        # ... run inference workload ...
+        monitor.stop()
+        samples = monitor.get_samples()
+    """
+
+    def __init__(self, sample_interval_ms: int = 100):
+        """
+        Initialize NvidiaPowerMonitor.
+
+        Args:
+            sample_interval_ms: Sampling interval in milliseconds (default: 100ms)
+        """
+        self.sample_interval_ms = sample_interval_ms
+        self._samples: List[PowerSample] = []
+        self._samples_lock = threading.Lock()
+        self._start_time: Optional[float] = None
+        self._running = False
+        self._sampling_thread: Optional[threading.Thread] = None
+        self._current_phase: str = 'idle'
+
+        # Peak power tracking
+        self._peak_total_power_mw: float = 0.0
+        self._peak_cpu_power_mw: float = 0.0
+        self._peak_gpu_power_mw: float = 0.0
+        self._peak_ane_power_mw: float = 0.0
+        self._peak_dram_power_mw: float = 0.0
+        self._peak_timestamp_ms: float = 0.0
+
+    @classmethod
+    def is_available(cls) -> bool:
+        """
+        Check if nvidia-smi is available.
+
+        Returns:
+            True if nvidia-smi command exists and can query GPU power, False otherwise
+        """
+        try:
+            result = subprocess.run(
+                ['nvidia-smi', '--query-gpu=power.draw', '--format=csv,noheader,nounits', '--id=0'],
+                capture_output=True,
+                timeout=2,
+                text=True
+            )
+            # Check if command succeeded and returned numeric value
+            if result.returncode == 0:
+                try:
+                    float(result.stdout.strip())
+                    return True
+                except ValueError:
+                    return False
+            return False
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            return False
+
+    def _sampling_loop(self) -> None:
+        """
+        Background thread to continuously query nvidia-smi for GPU power.
+        """
+        interval_seconds = self.sample_interval_ms / 1000.0
+
+        while self._running:
+            try:
+                timestamp = time.time()
+                relative_time_ms = (timestamp - self._start_time) * 1000.0 if self._start_time else 0.0
+
+                # Query nvidia-smi for power draw
+                result = subprocess.run(
+                    ['nvidia-smi', '--query-gpu=power.draw', '--format=csv,noheader,nounits'],
+                    capture_output=True,
+                    timeout=1,
+                    text=True
+                )
+
+                if result.returncode == 0:
+                    # Parse GPU power (in watts, convert to milliwatts)
+                    gpu_power_w = float(result.stdout.strip())
+                    gpu_power_mw = gpu_power_w * 1000.0
+
+                    # For NVIDIA systems, we only have GPU power
+                    # CPU, ANE, DRAM are set to 0
+                    sample = PowerSample(
+                        timestamp=timestamp,
+                        relative_time_ms=relative_time_ms,
+                        cpu_power_mw=0.0,
+                        gpu_power_mw=gpu_power_mw,
+                        ane_power_mw=0.0,
+                        dram_power_mw=0.0,
+                        total_power_mw=gpu_power_mw,
+                        phase=self._current_phase
+                    )
+
+                    # Track peak power
+                    if gpu_power_mw > self._peak_gpu_power_mw:
+                        self._peak_gpu_power_mw = gpu_power_mw
+                        self._peak_total_power_mw = gpu_power_mw
+                        self._peak_timestamp_ms = relative_time_ms
+
+                    with self._samples_lock:
+                        self._samples.append(sample)
+                        # Call power sample callback if set
+                        if hasattr(self, '_power_sample_callback') and self._power_sample_callback:
+                            try:
+                                self._power_sample_callback(sample)
+                            except Exception as cb_e:
+                                print(f"Warning: Power sample callback failed: {cb_e}")
+
+                # Sleep for the specified interval
+                time.sleep(interval_seconds)
+
+            except Exception as e:
+                print(f"Warning: Failed to sample NVIDIA GPU power: {e}")
+                time.sleep(interval_seconds)
+
+    def start(self) -> None:
+        """
+        Start power monitoring.
+
+        Raises:
+            RuntimeError: If monitor is already running
+            FileNotFoundError: If nvidia-smi is not installed
+        """
+        if self._running:
+            raise RuntimeError("NvidiaPowerMonitor is already running")
+
+        if not self.is_available():
+            raise FileNotFoundError(
+                "nvidia-smi command not found or GPU not accessible. "
+                "Ensure NVIDIA drivers are installed and GPU is available."
+            )
+
+        self._start_time = time.time()
+        self._running = True
+        self._samples = []
+
+        # Reset peak power tracking
+        self._peak_total_power_mw = 0.0
+        self._peak_cpu_power_mw = 0.0
+        self._peak_gpu_power_mw = 0.0
+        self._peak_ane_power_mw = 0.0
+        self._peak_dram_power_mw = 0.0
+        self._peak_timestamp_ms = 0.0
+
+        # Start background sampling thread
+        self._sampling_thread = threading.Thread(target=self._sampling_loop, daemon=True)
+        self._sampling_thread.start()
+
+        print(f"NvidiaPowerMonitor started successfully with {self.sample_interval_ms}ms sampling interval")
+
+    def stop(self) -> None:
+        """
+        Stop power monitoring.
+
+        Raises:
+            RuntimeError: If monitor is not running
+        """
+        if not self._running:
+            raise RuntimeError("NvidiaPowerMonitor is not running")
+
+        # Signal thread to stop
+        self._running = False
+
+        # Wait for sampling thread to finish
+        if self._sampling_thread and self._sampling_thread.is_alive():
+            self._sampling_thread.join(timeout=2)
+
+        self._sampling_thread = None
+
+    def is_running(self) -> bool:
+        """Check if the monitor is currently running"""
+        return self._running
+
+    def get_samples(self) -> List[PowerSample]:
+        """
+        Retrieve all collected power samples.
+
+        Returns:
+            List of PowerSample objects collected since start()
+        """
+        with self._samples_lock:
+            return self._samples.copy()
+
+    def get_current(self) -> Optional[PowerSample]:
+        """
+        Get the most recent power sample.
+
+        Returns:
+            Latest PowerSample or None if no samples collected yet
+        """
+        with self._samples_lock:
+            return self._samples[-1] if self._samples else None
+
+    def set_phase(self, phase: str) -> None:
+        """
+        Set the current inference phase for tagging power samples.
+
+        Args:
+            phase: Phase name (idle, pre_inference, prefill, decode, post_inference)
+        """
+        valid_phases = {'idle', 'pre_inference', 'prefill', 'decode', 'post_inference'}
+        if phase not in valid_phases:
+            raise ValueError(f"Invalid phase '{phase}'. Must be one of: {valid_phases}")
+        self._current_phase = phase
+
+    def get_phase(self) -> str:
+        """
+        Get the current inference phase.
+
+        Returns:
+            Current phase name
+        """
+        return self._current_phase
+
+    def get_peak_power(self) -> Dict[str, float]:
+        """
+        Get peak power values recorded during sampling.
+
+        Returns:
+            Dictionary with peak power values for each component
+        """
+        with self._samples_lock:
+            return {
+                'peak_power_mw': self._peak_total_power_mw,
+                'peak_power_cpu_mw': self._peak_cpu_power_mw,
+                'peak_power_gpu_mw': self._peak_gpu_power_mw,
+                'peak_power_ane_mw': self._peak_ane_power_mw,
+                'peak_power_dram_mw': self._peak_dram_power_mw,
+                'peak_power_timestamp_ms': self._peak_timestamp_ms
+            }
+
+    def measure_idle_baseline(self, duration_seconds: float = 2.0) -> Dict[str, float]:
+        """
+        Measure idle power baseline before inference starts.
+
+        Args:
+            duration_seconds: How long to sample idle power (default: 2.0 seconds)
+
+        Returns:
+            Dictionary with baseline power measurements
+
+        Raises:
+            RuntimeError: If monitor is not running or no samples collected
+        """
+        if not self._running:
+            raise RuntimeError("NvidiaPowerMonitor must be running to measure idle baseline")
+
+        # Record starting sample count
+        initial_sample_count = len(self._samples)
+
+        # Wait for the specified duration while collecting idle samples
+        print(f"Measuring idle baseline for {duration_seconds} seconds...")
+        time.sleep(duration_seconds)
+
+        # Get all samples collected during idle period
+        with self._samples_lock:
+            idle_samples = self._samples[initial_sample_count:]
+
+        if not idle_samples:
+            raise RuntimeError(
+                f"No idle samples collected during {duration_seconds} second baseline measurement."
+            )
+
+        # Calculate average power across idle samples
+        total_gpu = sum(s.gpu_power_mw for s in idle_samples)
+        total_power = sum(s.total_power_mw for s in idle_samples)
+        sample_count = len(idle_samples)
+
+        baseline = {
+            'baseline_power_mw': total_power / sample_count,
+            'baseline_cpu_power_mw': 0.0,
+            'baseline_gpu_power_mw': total_gpu / sample_count,
+            'baseline_ane_power_mw': 0.0,
+            'baseline_dram_power_mw': 0.0,
+            'baseline_sample_count': sample_count
+        }
+
+        print(f"Idle baseline established: {baseline['baseline_power_mw']:.2f} mW total power "
+              f"({sample_count} samples)")
+
+        return baseline
+
+    def __enter__(self):
+        """Context manager entry"""
+        self.start()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit"""
+        if self._running:
+            self.stop()
+        return False
+
+
+def create_power_monitor(sample_interval_ms: int = 100):
+    """
+    Factory function to create appropriate power monitor for the current platform.
+
+    Args:
+        sample_interval_ms: Sampling interval in milliseconds (default: 100ms)
+
+    Returns:
+        PowerMonitor for macOS systems or NvidiaPowerMonitor for NVIDIA GPU systems
+
+    Raises:
+        RuntimeError: If no power monitoring is available on this platform
+    """
+    system = platform.system()
+
+    # Try macOS powermetrics first (for Apple Silicon)
+    if system == 'Darwin' and PowerMonitor.is_available():
+        return PowerMonitor(sample_interval_ms=sample_interval_ms)
+
+    # Try NVIDIA GPU monitoring (for systems with NVIDIA GPUs)
+    if NvidiaPowerMonitor.is_available():
+        return NvidiaPowerMonitor(sample_interval_ms=sample_interval_ms)
+
+    # No power monitoring available
+    raise RuntimeError(
+        f"No power monitoring available on this platform ({system}). "
+        f"Supported: macOS with powermetrics or NVIDIA GPU with nvidia-smi"
+    )
