@@ -554,7 +554,7 @@
       "title": "Fix power baseline measurement timing",
       "description": "Idle baseline measurement happens during profiling which includes model loading overhead. Should measure true idle baseline before any work.",
       "priority": "medium",
-      "passes": false,
+      "passes": true,
       "debug_steps": {
         "review": "Read backend/main.py profiled_generate. Check where measure_idle_baseline() is called relative to model loading.",
         "test": "Baseline power may include model loading power spike if model loads during baseline.",

@@ -1887,6 +1887,23 @@ async def profiled_generate(request: ProfiledGenerateRequest):
 
         model.to(device)
 
+        # Wait for system to settle after model loading (BUG-043)
+        # Model loading causes power spikes - allow system to return to idle state
+        # before measuring baseline. This ensures baseline reflects true idle power
+        # with model loaded in memory, not the tail of model loading activity.
+        logger.info("Waiting for system to settle after model loading...")
+        await profiling_manager.broadcast({
+            "type": ProfilingMessageType.MODEL_LOADING,
+            "timestamp": time.time() * 1000,
+            "data": {
+                "status": "settling",
+                "model_name": model_name,
+                "model_path": request.model_path,
+                "message": f"Waiting for system to settle (3s)..."
+            }
+        })
+        await asyncio.sleep(3.0)  # 3 second settling period
+
         await profiling_manager.broadcast({
             "type": ProfilingMessageType.MODEL_LOADING,
             "timestamp": time.time() * 1000,
