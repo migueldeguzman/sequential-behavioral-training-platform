@@ -3012,3 +3012,22 @@ Notes:
 - Test multiple layers profiled correctly
 - Test tuple output handling from attention modules
 - All 13 tests pass successfully (pytest 8.3.5)
+
+### EP-071: Testing - Database Unit Tests - COMPLETED
+- Created backend/tests/test_database.py with comprehensive unit tests (18 test cases)
+- Test schema creation for all tables and indexes
+- Test CRUD operations: create_run(), update_run_metrics(), get_run(), delete_run()
+- Test query methods: get_runs(), get_run_summary(), get_tokens(), get_layer_metrics()
+- Test batch operations: add_power_samples(), add_tokens_batch(), add_layer_metrics()
+- Test cascading deletes with foreign key constraints enabled
+- Test retention and cleanup: cleanup_old_runs(), get_retention_stats()
+- Test error handling: foreign key violations, connection errors
+- All 18 tests pass successfully (pytest 8.3.5)
+- Verified Python syntax with py_compile (no errors)
+- Tests cover full data hierarchy: run -> power/sections/tokens -> layers -> components
+
+Files Created:
+- backend/tests/test_database.py (919 lines)
+
+Build Verification:
+- pytest tests/test_database.py -v: 18 passed in 0.13s

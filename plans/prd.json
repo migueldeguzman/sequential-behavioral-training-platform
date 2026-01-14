@@ -1163,7 +1163,7 @@
       "title": "Testing - Database Unit Tests",
       "description": "Add unit tests for ProfileDatabase class",
       "priority": "MEDIUM",
-      "passes": false,
+      "passes": true,
       "steps": [
         "Test schema creation",
         "Test CRUD operations",
