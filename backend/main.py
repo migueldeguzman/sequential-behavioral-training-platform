@@ -2097,7 +2097,7 @@ async def profiled_generate(request: ProfiledGenerateRequest):
             batch_size=request.batch_size,
             model=model
         ) as session:
-            # Store model features in session for database (BUG-033)
+            # Store model features in session for database (BUG-033, BUG-040)
             if model_features:
                 session.num_layers = model_features.num_layers
                 session.hidden_size = model_features.hidden_size
@@ -2110,6 +2110,8 @@ async def profiled_generate(request: ProfiledGenerateRequest):
                 session.num_experts = model_features.num_experts
                 session.num_active_experts = model_features.num_active_experts
                 session.architecture_type = model_features.architecture_type
+                session.precision = model_features.precision
+                session.quantization_method = model_features.quantization_method
 
             # Pre-inference phase
             with session.section("tokenization", phase="pre_inference"):

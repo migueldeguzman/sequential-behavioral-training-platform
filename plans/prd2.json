@@ -515,7 +515,7 @@
       "title": "Add model quantization detection",
       "description": "Database has quantization_method field but profiling doesn't detect if model is quantized and what method was used.",
       "priority": "low",
-      "passes": false,
+      "passes": true,
       "debug_steps": {
         "review": "Read backend/profiling/model_detector.py. No quantization detection. Read database.py - has quantization_method, precision fields.",
         "test": "Profile quantized model. quantization_method shows as null.",

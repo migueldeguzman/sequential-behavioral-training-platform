@@ -105,6 +105,8 @@ class ProfilingSession:
     num_experts: Optional[int] = None
     num_active_experts: Optional[int] = None
     architecture_type: Optional[str] = None
+    precision: Optional[str] = None  # FP32, FP16, BF16, FP8, INT8, INT4, MIXED
+    quantization_method: Optional[str] = None  # gptq, awq, gguf, bitsandbytes, None
 
     # References to profiling components
     power_monitor: Optional[PowerMonitor] = None
@@ -477,7 +479,9 @@ class InferencePipelineProfiler:
             batch_size=session.batch_size,
             electricity_price_per_kwh=session.electricity_price_per_kwh,
             carbon_intensity_g_per_kwh=session.carbon_intensity_g_per_kwh,
-            inference_engine=session.inference_engine
+            inference_engine=session.inference_engine,
+            precision=session.precision,
+            quantization_method=session.quantization_method
         )
 
         # Get peak power metrics
