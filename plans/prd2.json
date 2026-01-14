@@ -476,7 +476,7 @@
       "title": "Fix duplicate WebSocket connections on component remount",
       "description": "ProfilingContext may create duplicate WebSocket connections when component unmounts and remounts quickly.",
       "priority": "low",
-      "passes": false,
+      "passes": true,
       "debug_steps": {
         "review": "Read src/components/profiling/ProfilingContext.tsx useEffect for WebSocket setup. Check cleanup function.",
         "test": "Navigate away from and back to profiler quickly. May see multiple WebSocket connections.",

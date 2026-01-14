@@ -30,6 +30,9 @@ export type ProfilingEventHandlers = {
   connectionStateChange?: (state: ConnectionState) => void;
 };
 
+// Singleton instance holder
+let globalManagerInstance: ProfilingWebSocketManager | null = null;
+
 // WebSocket manager class
 export class ProfilingWebSocketManager {
   private ws: WebSocket | null = null;
@@ -47,6 +50,7 @@ export class ProfilingWebSocketManager {
   private lastPongTime: number = 0;
   private readonly PING_INTERVAL_MS = 30000; // Send ping every 30 seconds
   private readonly PONG_TIMEOUT_MS = 60000; // Reconnect if no pong in 60 seconds
+  private refCount = 0; // Track how many components are using this instance
 
   constructor(baseUrl?: string) {
     // Use config if no baseUrl provided, which will check environment variables
@@ -59,6 +63,27 @@ export class ProfilingWebSocketManager {
     }
   }
 
+  // Get or create singleton instance
+  static getInstance(baseUrl?: string): ProfilingWebSocketManager {
+    if (!globalManagerInstance) {
+      globalManagerInstance = new ProfilingWebSocketManager(baseUrl);
+    }
+    globalManagerInstance.refCount++;
+    return globalManagerInstance;
+  }
+
+  // Release the instance (decrement ref count)
+  static releaseInstance(): void {
+    if (globalManagerInstance) {
+      globalManagerInstance.refCount--;
+      // Only truly disconnect and cleanup when no more references exist
+      if (globalManagerInstance.refCount <= 0) {
+        globalManagerInstance.disconnect();
+        globalManagerInstance = null;
+      }
+    }
+  }
+
   // Set event handlers
   on<T extends ProfilingMessageType>(
     type: T,
@@ -66,6 +91,16 @@ export class ProfilingWebSocketManager {
   ): void {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     this.handlers[type] = handler as any;
+  }
+
+  // Remove event handler
+  off<T extends ProfilingMessageType>(type: T): void {
+    delete this.handlers[type];
+  }
+
+  // Clear all handlers (useful when releasing instance)
+  clearHandlers(): void {
+    this.handlers = {};
   }
 
   // Set error handler
@@ -287,9 +322,10 @@ export function useProfilingWebSocket(options?: {
   const [error, setError] = useState<Error | null>(null);
   const wsManagerRef = useRef<ProfilingWebSocketManager | null>(null);
 
-  // Initialize WebSocket manager
+  // Initialize WebSocket manager using singleton pattern
   useEffect(() => {
-    const manager = new ProfilingWebSocketManager(baseUrl);
+    // Get the singleton instance
+    const manager = ProfilingWebSocketManager.getInstance(baseUrl);
     wsManagerRef.current = manager;
 
     // Set up connection state handler
@@ -318,9 +354,10 @@ export function useProfilingWebSocket(options?: {
       manager.connect();
     }
 
-    // Cleanup on unmount
+    // Cleanup on unmount - release the singleton reference
     return () => {
-      manager.disconnect();
+      ProfilingWebSocketManager.releaseInstance();
+      wsManagerRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [baseUrl, autoConnect]);
