@@ -16,25 +16,28 @@ export function ProfilingControls() {
   const [modelPath, setModelPath] = useState<string>('');
   const [prompt, setPrompt] = useState<string>('');
 
+  // Fetch available models
+  const fetchModels = async () => {
+    setLoadingModels(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/models`);
+      if (response.ok) {
+        const models = await response.json();
+        setAvailableModels(models);
+        // Set default to most recent model if available and no model is selected
+        if (models.length > 0 && !modelPath) {
+          setModelPath(models[0].path);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to fetch models:', error);
+    } finally {
+      setLoadingModels(false);
+    }
+  };
+
   // Fetch available models on mount
   useEffect(() => {
-    const fetchModels = async () => {
-      try {
-        const response = await fetch(`${API_BASE_URL}/api/models`);
-        if (response.ok) {
-          const models = await response.json();
-          setAvailableModels(models);
-          // Set default to most recent model if available
-          if (models.length > 0) {
-            setModelPath(models[0].path);
-          }
-        }
-      } catch (error) {
-        console.error('Failed to fetch models:', error);
-      } finally {
-        setLoadingModels(false);
-      }
-    };
     fetchModels();
   }, []);
   const [profilingDepth, setProfilingDepth] = useState<'module' | 'deep'>('module');
@@ -112,9 +115,19 @@ export function ProfilingControls() {
 
         {/* Model Selector */}
         <div>
-          <label htmlFor="model-path" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            Model
-          </label>
+          <div className="flex items-center justify-between mb-1">
+            <label htmlFor="model-path" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+              Model
+            </label>
+            <button
+              onClick={fetchModels}
+              disabled={isRunning || loadingModels}
+              className="text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 disabled:text-gray-400 disabled:cursor-not-allowed"
+              title="Refresh model list"
+            >
+              {loadingModels ? 'Refreshing...' : 'Refresh'}
+            </button>
+          </div>
           <select
             id="model-path"
             value={modelPath}

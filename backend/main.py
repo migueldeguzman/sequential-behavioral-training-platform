@@ -1241,7 +1241,9 @@ def discover_model_directories() -> list[Path]:
     if paths["model_output"].exists():
         for item in paths["model_output"].iterdir():
             if item.is_dir():
-                model_dirs.append(item)
+                # Only include directories with config.json (valid model directories)
+                if (item / "config.json").exists():
+                    model_dirs.append(item)
 
     # Scan step_* directories in project root
     project_root = paths["pipeline"].parent

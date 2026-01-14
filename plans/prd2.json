@@ -320,7 +320,7 @@
       "title": "Fix model dropdown not showing all models",
       "description": "ProfilingControls model dropdown fetches from /api/models but may not show all trained models in the models directory.",
       "priority": "medium",
-      "passes": false,
+      "passes": true,
       "debug_steps": {
         "review": "Read backend/main.py /api/models endpoint. Check how models are discovered. Read ProfilingControls useEffect for fetching models.",
         "test": "Add a new model to models directory. May not appear in dropdown until server restart.",
