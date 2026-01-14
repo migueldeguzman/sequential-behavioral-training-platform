@@ -488,6 +488,17 @@ class ProfileDatabase:
         decode_edp: Optional[float] = None,
         cost_usd: Optional[float] = None,
         co2_grams: Optional[float] = None,
+        num_layers: Optional[int] = None,
+        hidden_size: Optional[int] = None,
+        intermediate_size: Optional[int] = None,
+        num_attention_heads: Optional[int] = None,
+        num_key_value_heads: Optional[int] = None,
+        total_params: Optional[int] = None,
+        attention_mechanism: Optional[str] = None,
+        is_moe: Optional[bool] = None,
+        num_experts: Optional[int] = None,
+        num_active_experts: Optional[int] = None,
+        architecture_type: Optional[str] = None,
         status: str = "completed",
     ) -> None:
         """Update run with final metrics.
@@ -639,6 +650,39 @@ class ProfileDatabase:
         if co2_grams is not None:
             updates.append("co2_grams = ?")
             values.append(co2_grams)
+        if num_layers is not None:
+            updates.append("num_layers = ?")
+            values.append(num_layers)
+        if hidden_size is not None:
+            updates.append("hidden_size = ?")
+            values.append(hidden_size)
+        if intermediate_size is not None:
+            updates.append("intermediate_size = ?")
+            values.append(intermediate_size)
+        if num_attention_heads is not None:
+            updates.append("num_attention_heads = ?")
+            values.append(num_attention_heads)
+        if num_key_value_heads is not None:
+            updates.append("num_key_value_heads = ?")
+            values.append(num_key_value_heads)
+        if total_params is not None:
+            updates.append("total_params = ?")
+            values.append(total_params)
+        if attention_mechanism is not None:
+            updates.append("attention_mechanism = ?")
+            values.append(attention_mechanism)
+        if is_moe is not None:
+            updates.append("is_moe = ?")
+            values.append(1 if is_moe else 0)
+        if num_experts is not None:
+            updates.append("num_experts = ?")
+            values.append(num_experts)
+        if num_active_experts is not None:
+            updates.append("num_active_experts = ?")
+            values.append(num_active_experts)
+        if architecture_type is not None:
+            updates.append("architecture_type = ?")
+            values.append(architecture_type)
 
         updates.append("status = ?")
         values.append(status)

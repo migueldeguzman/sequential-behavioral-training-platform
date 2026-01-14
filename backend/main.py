@@ -1789,6 +1789,7 @@ async def profiled_generate(request: ProfiledGenerateRequest):
     from profiling.database import ProfileDatabase
     from profiling.pipeline_profiler import InferencePipelineProfiler
     from profiling.model_detector import is_streaming_compatible
+    from profiling.model_features import extract_model_features
 
     # Capture the main event loop for thread-safe async operations
     main_loop = asyncio.get_running_loop()
@@ -1880,6 +1881,14 @@ async def profiled_generate(request: ProfiledGenerateRequest):
                 "message": f"Model {model_name} loaded successfully"
             }
         })
+
+        # Extract model features for database storage (BUG-033)
+        try:
+            model_features = extract_model_features(model, model_name)
+            logger.info(f"Extracted model features: {model_features.architecture_type} with {model_features.total_params:,} parameters")
+        except Exception as e:
+            logger.warning(f"Failed to extract model features: {e}")
+            model_features = None
 
         # Initialize profilers with graceful fallbacks
         layer_profiler = None
@@ -2054,6 +2063,20 @@ async def profiled_generate(request: ProfiledGenerateRequest):
             tags=request.tags,
             model=model
         ) as session:
+            # Store model features in session for database (BUG-033)
+            if model_features:
+                session.num_layers = model_features.num_layers
+                session.hidden_size = model_features.hidden_size
+                session.intermediate_size = model_features.intermediate_size
+                session.num_attention_heads = model_features.num_attention_heads
+                session.num_key_value_heads = model_features.num_key_value_heads
+                session.total_params = model_features.total_params
+                session.attention_mechanism = model_features.attention_mechanism
+                session.is_moe = model_features.is_moe
+                session.num_experts = model_features.num_experts
+                session.num_active_experts = model_features.num_active_experts
+                session.architecture_type = model_features.architecture_type
+
             # Pre-inference phase
             with session.section("tokenization", phase="pre_inference"):
                 inputs = tokenizer(request.prompt, return_tensors="pt", padding=True)

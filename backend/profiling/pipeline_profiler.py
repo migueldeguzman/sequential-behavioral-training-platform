@@ -92,6 +92,19 @@ class ProfilingSession:
     kv_cache_size_mb: Optional[float] = None
     context_length: Optional[int] = None
 
+    # Model features
+    num_layers: Optional[int] = None
+    hidden_size: Optional[int] = None
+    intermediate_size: Optional[int] = None
+    num_attention_heads: Optional[int] = None
+    num_key_value_heads: Optional[int] = None
+    total_params: Optional[int] = None
+    attention_mechanism: Optional[str] = None
+    is_moe: Optional[bool] = None
+    num_experts: Optional[int] = None
+    num_active_experts: Optional[int] = None
+    architecture_type: Optional[str] = None
+
     # References to profiling components
     power_monitor: Optional[PowerMonitor] = None
     layer_profiler: Optional[LayerProfiler] = None
@@ -514,6 +527,17 @@ class InferencePipelineProfiler:
             context_length=session.context_length,
             cost_usd=cost_usd,
             co2_grams=co2_grams,
+            num_layers=session.num_layers,
+            hidden_size=session.hidden_size,
+            intermediate_size=session.intermediate_size,
+            num_attention_heads=session.num_attention_heads,
+            num_key_value_heads=session.num_key_value_heads,
+            total_params=session.total_params,
+            attention_mechanism=session.attention_mechanism,
+            is_moe=session.is_moe,
+            num_experts=session.num_experts,
+            num_active_experts=session.num_active_experts,
+            architecture_type=session.architecture_type,
             status="completed"
         )
 

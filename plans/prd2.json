@@ -424,7 +424,7 @@
       "title": "Fix model features extraction",
       "description": "Database stores model features (num_layers, hidden_size, etc.) but profiling may not extract them from loaded model.",
       "priority": "medium",
-      "passes": false,
+      "passes": true,
       "debug_steps": {
         "review": "Read backend/main.py profiled_generate. Check if model config attributes are extracted and stored. Read model_detector.py for feature extraction.",
         "test": "Check profiling run in database. num_layers, hidden_size, etc. may be null.",
