@@ -489,7 +489,7 @@
       "title": "Add export profiling data feature",
       "description": "No way to export profiling data to CSV/JSON for external analysis or comparison.",
       "priority": "low",
-      "passes": false,
+      "passes": true,
       "debug_steps": {
         "review": "Read database.py - data stored in SQLite. No export endpoints. Read frontend - no export UI.",
         "test": "Cannot export profiling results to file.",
