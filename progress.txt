@@ -3174,3 +3174,27 @@ Notes:
 - All tests follow best practices with proper cleanup and isolation
 - Tests cover happy paths, edge cases, and error scenarios
 - Ready for CI/CD integration
+
+
+---
+
+## 2026-01-14
+### EP-087: Batch Size Energy Analysis - COMPLETED
+- Added batch_size field to profiling_runs table in database schema
+- Updated ProfileDatabase.create_run() to accept batch_size parameter (default: 1)
+- Updated ProfileDatabase.update_run_metrics() to support batch_size updates
+- Created /api/profiling/batch-size-analysis endpoint with filtering options
+- Endpoint analyzes energy per token vs batch size relationship
+- Calculates optimal batch sizes for energy efficiency, throughput, and EDP
+- Returns averaged metrics grouped by batch size
+- Created BatchSizeAnalysis.tsx frontend component with three chart types:
+  - Energy vs Batch Size line chart
+  - Throughput vs Batch Size line chart
+  - Throughput vs Energy tradeoff scatter plot
+- All charts use Canvas rendering for performance
+- Implemented interactive tooltips on hover
+- Color-coded scatter points by batch size for easy identification
+- Verified Python syntax with py_compile (no errors)
+- Verified TypeScript compilation with npm run build (SUCCESS)
+- Based on TokenPowerBench research: 2-3× energy spread between batch sizes
+- Enables identification of optimal batch size for energy-throughput tradeoff

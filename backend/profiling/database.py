@@ -121,6 +121,7 @@ class ProfileDatabase:
                 kv_cache_utilization_pct REAL,
                 kv_cache_memory_limit_mb REAL,
                 context_length INTEGER,
+                batch_size INTEGER DEFAULT 1,
                 status TEXT DEFAULT 'running',
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
@@ -304,6 +305,7 @@ class ProfileDatabase:
         experiment_name: Optional[str] = None,
         tags: Optional[str] = None,
         profiling_depth: str = "module",
+        batch_size: int = 1,
     ) -> int:
         """Create a new profiling run record.
 
@@ -316,6 +318,7 @@ class ProfileDatabase:
             experiment_name: Optional experiment name
             tags: Comma-separated tags
             profiling_depth: 'module' or 'deep'
+            batch_size: Batch size used for inference
 
         Returns:
             Database row ID of created run
@@ -325,13 +328,13 @@ class ProfileDatabase:
             """
             INSERT INTO profiling_runs (
                 run_id, timestamp, model_name, prompt, response,
-                experiment_name, tags, profiling_depth, status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'running')
+                experiment_name, tags, profiling_depth, batch_size, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'running')
             """,
-            (run_id, timestamp, model_name, prompt, response, experiment_name, tags, profiling_depth),
+            (run_id, timestamp, model_name, prompt, response, experiment_name, tags, profiling_depth, batch_size),
         )
         self.conn.commit()
-        logger.info(f"Created profiling run {run_id}")
+        logger.info(f"Created profiling run {run_id} with batch_size={batch_size}")
         return cursor.lastrowid
 
     def update_run_metrics(
@@ -364,6 +367,7 @@ class ProfileDatabase:
         kv_cache_utilization_pct: Optional[float] = None,
         kv_cache_memory_limit_mb: Optional[float] = None,
         context_length: Optional[int] = None,
+        batch_size: Optional[int] = None,
         status: str = "completed",
     ) -> None:
         """Update run with final metrics.
@@ -397,6 +401,7 @@ class ProfileDatabase:
             kv_cache_utilization_pct: KV cache utilization as percentage of limit
             kv_cache_memory_limit_mb: KV cache memory limit in megabytes
             context_length: Total context length (input + output tokens)
+            batch_size: Batch size used for inference
             status: Run status (default: 'completed')
         """
         cursor = self.conn.cursor()
@@ -486,6 +491,9 @@ class ProfileDatabase:
         if context_length is not None:
             updates.append("context_length = ?")
             values.append(context_length)
+        if batch_size is not None:
+            updates.append("batch_size = ?")
+            values.append(batch_size)
 
         updates.append("status = ?")
         values.append(status)

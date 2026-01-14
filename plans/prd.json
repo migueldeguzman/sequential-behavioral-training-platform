@@ -1430,7 +1430,7 @@
       "title": "Batch Size Energy Analysis",
       "description": "Analyze how batch size affects energy per token for throughput optimization",
       "priority": "MEDIUM",
-      "passes": false,
+      "passes": true,
       "reference": "TokenPowerBench: 2-3× energy spread between batch 32-1024, steepest drop at 32-256",
       "steps": [
         "Add batch_size field to profiling_runs table",

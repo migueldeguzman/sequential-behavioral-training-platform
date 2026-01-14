@@ -2702,6 +2702,232 @@ async def compare_profiling_runs(run_ids: List[str]):
             db.close()
 
 
+@app.get("/api/profiling/batch-size-analysis")
+async def get_batch_size_analysis(
+    model_name: Optional[str] = None,
+    min_batch_size: Optional[int] = None,
+    max_batch_size: Optional[int] = None
+):
+    """
+    Analyze how batch size affects energy per token for throughput optimization.
+
+    Based on TokenPowerBench research: 2-3× energy spread between batch 32-1024,
+    steepest drop at 32-256. This endpoint helps identify the optimal batch size
+    for energy efficiency.
+
+    Args:
+        model_name: Optional filter by model name
+        min_batch_size: Optional minimum batch size to include
+        max_batch_size: Optional maximum batch size to include
+
+    Returns:
+        {
+            "data_points": [
+                {
+                    "run_id": str,
+                    "batch_size": int,
+                    "model_name": str,
+                    "energy_per_token_mj": float,
+                    "joules_per_token": float,
+                    "total_energy_mj": float,
+                    "total_tokens": int,
+                    "tokens_per_second": float,
+                    "duration_ms": float,
+                    "timestamp": str
+                },
+                ...
+            ],
+            "analysis": {
+                "optimal_batch_size": {
+                    "for_energy_efficiency": int,  # batch size with lowest J/t
+                    "for_throughput": int,  # batch size with highest t/s
+                    "for_edp": int  # batch size with lowest energy-delay product
+                },
+                "energy_vs_batch_curve": [
+                    {"batch_size": int, "avg_energy_per_token": float},
+                    ...
+                ],
+                "throughput_vs_energy_tradeoff": [
+                    {"batch_size": int, "tokens_per_second": float, "energy_per_token": float},
+                    ...
+                ]
+            },
+            "statistics": {
+                "total_runs": int,
+                "batch_sizes_tested": [int, ...],
+                "energy_spread_factor": float  # max/min energy ratio
+            }
+        }
+
+    Raises:
+        HTTPException: 500 if database error
+
+    Example:
+        GET /api/profiling/batch-size-analysis
+        GET /api/profiling/batch-size-analysis?model_name=llama-7b
+        GET /api/profiling/batch-size-analysis?min_batch_size=16&max_batch_size=256
+    """
+    db = None
+    try:
+        db = ProfileDatabase()
+
+        # Build query with filters
+        query = """
+            SELECT
+                run_id,
+                batch_size,
+                model_name,
+                total_energy_mj,
+                token_count,
+                tokens_per_second,
+                total_duration_ms,
+                timestamp
+            FROM profiling_runs
+            WHERE status = 'completed'
+                AND batch_size IS NOT NULL
+                AND total_energy_mj IS NOT NULL
+                AND token_count > 0
+        """
+        params = []
+
+        if model_name:
+            query += " AND model_name = ?"
+            params.append(model_name)
+
+        if min_batch_size is not None:
+            query += " AND batch_size >= ?"
+            params.append(min_batch_size)
+
+        if max_batch_size is not None:
+            query += " AND batch_size <= ?"
+            params.append(max_batch_size)
+
+        query += " ORDER BY batch_size ASC, timestamp DESC"
+
+        cursor = db.conn.cursor()
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+
+        if not rows:
+            return {
+                "data_points": [],
+                "analysis": {
+                    "optimal_batch_size": {},
+                    "energy_vs_batch_curve": [],
+                    "throughput_vs_energy_tradeoff": []
+                },
+                "statistics": {
+                    "total_runs": 0,
+                    "batch_sizes_tested": [],
+                    "energy_spread_factor": 0
+                }
+            }
+
+        # Process data points
+        data_points = []
+        batch_size_groups = {}  # Group runs by batch size for averaging
+
+        for row in rows:
+            total_tokens = row['token_count'] or 0
+            energy_per_token_mj = (row['total_energy_mj'] / total_tokens) if total_tokens > 0 else 0
+            joules_per_token = energy_per_token_mj / 1000.0
+
+            data_point = {
+                "run_id": row['run_id'],
+                "batch_size": row['batch_size'],
+                "model_name": row['model_name'],
+                "energy_per_token_mj": energy_per_token_mj,
+                "joules_per_token": joules_per_token,
+                "total_energy_mj": row['total_energy_mj'],
+                "total_tokens": total_tokens,
+                "tokens_per_second": row['tokens_per_second'] or 0,
+                "duration_ms": row['total_duration_ms'] or 0,
+                "timestamp": row['timestamp']
+            }
+            data_points.append(data_point)
+
+            # Group by batch size for analysis
+            batch_size = row['batch_size']
+            if batch_size not in batch_size_groups:
+                batch_size_groups[batch_size] = []
+            batch_size_groups[batch_size].append(data_point)
+
+        # Calculate averaged metrics per batch size
+        energy_vs_batch_curve = []
+        throughput_vs_energy = []
+
+        for batch_size in sorted(batch_size_groups.keys()):
+            group = batch_size_groups[batch_size]
+
+            avg_energy = sum(p['energy_per_token_mj'] for p in group) / len(group)
+            avg_throughput = sum(p['tokens_per_second'] for p in group) / len(group)
+
+            energy_vs_batch_curve.append({
+                "batch_size": batch_size,
+                "avg_energy_per_token": avg_energy,
+                "sample_count": len(group)
+            })
+
+            throughput_vs_energy.append({
+                "batch_size": batch_size,
+                "tokens_per_second": avg_throughput,
+                "energy_per_token": avg_energy
+            })
+
+        # Find optimal batch sizes
+        optimal_for_energy = min(energy_vs_batch_curve, key=lambda x: x['avg_energy_per_token'])
+        optimal_for_throughput = max(throughput_vs_energy, key=lambda x: x['tokens_per_second'])
+
+        # Calculate Energy-Delay Product (EDP) for each batch size
+        edp_scores = []
+        for te in throughput_vs_energy:
+            # EDP = energy × latency (lower is better)
+            # latency ≈ 1 / throughput
+            if te['tokens_per_second'] > 0:
+                latency_per_token = 1000.0 / te['tokens_per_second']  # ms per token
+                edp = te['energy_per_token'] * latency_per_token
+                edp_scores.append({
+                    "batch_size": te['batch_size'],
+                    "edp": edp
+                })
+
+        optimal_for_edp = min(edp_scores, key=lambda x: x['edp']) if edp_scores else None
+
+        # Calculate statistics
+        all_energies = [p['energy_per_token_mj'] for p in data_points if p['energy_per_token_mj'] > 0]
+        energy_spread = (max(all_energies) / min(all_energies)) if all_energies else 0
+
+        batch_sizes_tested = sorted(set(batch_size_groups.keys()))
+
+        return {
+            "data_points": data_points,
+            "analysis": {
+                "optimal_batch_size": {
+                    "for_energy_efficiency": optimal_for_energy['batch_size'],
+                    "for_throughput": optimal_for_throughput['batch_size'],
+                    "for_edp": optimal_for_edp['batch_size'] if optimal_for_edp else None
+                },
+                "energy_vs_batch_curve": energy_vs_batch_curve,
+                "throughput_vs_energy_tradeoff": throughput_vs_energy
+            },
+            "statistics": {
+                "total_runs": len(data_points),
+                "batch_sizes_tested": batch_sizes_tested,
+                "energy_spread_factor": round(energy_spread, 2)
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Batch size analysis failed: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to analyze batch size data: {str(e)}"
+        )
+    finally:
+        if db:
+            db.close()
+
+
 @app.get("/api/profiling/architectural-analysis")
 async def get_architectural_analysis(
     model_filter: Optional[str] = None,
