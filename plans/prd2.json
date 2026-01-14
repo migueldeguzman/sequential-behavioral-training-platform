@@ -268,7 +268,7 @@
       "title": "Fix CurrentOperationIndicator not updating",
       "description": "CurrentOperationIndicator component should show current phase and section but may not receive WebSocket updates properly.",
       "priority": "low",
-      "passes": false,
+      "passes": true,
       "debug_steps": {
         "review": "Read src/components/profiling/CurrentOperationIndicator.tsx. Check what context values it uses. Read ProfilingContext section_start/section_end handlers.",
         "test": "Profile and check operation indicator at bottom. May stay on 'Idle' or not update phases.",

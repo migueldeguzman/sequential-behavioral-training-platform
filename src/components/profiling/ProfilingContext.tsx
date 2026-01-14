@@ -112,8 +112,8 @@ export function ProfilingProvider({ children }: { children: React.ReactNode }) {
       setState((prev) => ({
         ...prev,
         currentSection: {
-          phase: message.phase,
-          section_name: message.section_name,
+          phase: message.data.phase,
+          section_name: message.data.section_name,
           start_time: message.timestamp,
         },
       }));
@@ -125,12 +125,12 @@ export function ProfilingProvider({ children }: { children: React.ReactNode }) {
         const section: PipelineSection = {
           id: prev.sections.length,
           run_id: prev.currentRun?.id || '',
-          phase: message.phase,
-          section_name: message.section_name,
-          start_time: message.timestamp - message.duration_ms,
+          phase: message.data.phase,
+          section_name: message.data.section_name,
+          start_time: message.timestamp - message.data.duration_ms,
           end_time: message.timestamp,
-          duration_ms: message.duration_ms,
-          energy_mj: message.energy_mj,
+          duration_ms: message.data.duration_ms,
+          energy_mj: message.data.energy_mj,
         };
 
         return {

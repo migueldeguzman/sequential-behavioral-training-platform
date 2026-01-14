@@ -425,16 +425,20 @@ export interface PowerSampleMessage extends BaseProfilingMessage {
 
 export interface SectionStartMessage extends BaseProfilingMessage {
   type: 'section_start';
-  phase: string;
-  section_name: string;
+  data: {
+    phase: string;
+    section_name: string;
+  };
 }
 
 export interface SectionEndMessage extends BaseProfilingMessage {
   type: 'section_end';
-  phase: string;
-  section_name: string;
-  duration_ms: number;
-  energy_mj: number;
+  data: {
+    phase: string;
+    section_name: string;
+    duration_ms: number;
+    energy_mj: number;
+  };
 }
 
 export interface TokenCompleteMessage extends BaseProfilingMessage {
