@@ -102,29 +102,36 @@ class PowerMonitor:
             # Extract processor data (contains CPU, GPU, ANE power)
             processor = plist_data.get('processor', {})
 
-            # CPU power - sum all clusters
-            clusters = processor.get('clusters', [])
-            for cluster in clusters:
-                cpu_power_mw += cluster.get('cpu_power', 0.0)
+            # Power values are directly in the processor dict (in milliwatts)
+            cpu_power_mw = processor.get('cpu_power', 0.0)
+            gpu_power_mw = processor.get('gpu_power', 0.0)
+            ane_power_mw = processor.get('ane_power', 0.0)
 
-            # GPU power
-            gpu = processor.get('gpu', {})
-            gpu_power_mw = gpu.get('gpu_power', 0.0)
+            # Combined power is also available directly
+            combined_power = processor.get('combined_power', 0.0)
 
-            # ANE (Apple Neural Engine) power
-            ane = processor.get('ane', {})
-            ane_power_mw = ane.get('power', 0.0)
+            # If direct values not available, fall back to cluster-based calculation
+            if cpu_power_mw == 0.0:
+                clusters = processor.get('clusters', [])
+                for cluster in clusters:
+                    cpu_power_mw += cluster.get('cpu_power', 0.0)
 
-            # DRAM power - from thermal samplers
+            # GPU power fallback - check nested gpu dict
+            if gpu_power_mw == 0.0:
+                gpu = processor.get('gpu', {})
+                gpu_power_mw = gpu.get('gpu_power', 0.0)
+
+            # DRAM power - from thermal samplers (not always available)
             thermal = plist_data.get('thermal', {})
             if 'channels' in thermal:
-                # Sum DRAM power from all channels
                 for channel in thermal.get('channels', []):
                     if 'DRAM' in channel.get('name', ''):
                         dram_power_mw += channel.get('power', 0.0)
 
-            # Calculate total power
+            # Use combined_power if available and our calculation seems off
             total_power_mw = cpu_power_mw + gpu_power_mw + ane_power_mw + dram_power_mw
+            if combined_power > 0 and total_power_mw == 0:
+                total_power_mw = combined_power
 
             # Track peak power values
             if total_power_mw > self._peak_total_power_mw:
@@ -158,16 +165,21 @@ class PowerMonitor:
             return
 
         try:
+            in_plist = False
             # Read powermetrics output line by line
             for line in self._process.stdout:
                 if not self._running:
                     break
 
-                # Buffer lines until we have a complete plist
-                self._plist_buffer += line
+                # Start buffering when we see XML declaration or plist start
+                if '<?xml' in line or '<plist' in line:
+                    self._plist_buffer = line
+                    in_plist = True
+                elif in_plist:
+                    self._plist_buffer += line
 
                 # Check if we have a complete plist (ends with </plist>)
-                if '</plist>' in line:
+                if '</plist>' in line and in_plist:
                     try:
                         # Parse the complete plist
                         plist_data = plistlib.loads(self._plist_buffer.encode('utf-8'))
@@ -177,12 +189,22 @@ class PowerMonitor:
                         if sample:
                             with self._samples_lock:
                                 self._samples.append(sample)
+                                # Call power sample callback if set
+                                if hasattr(self, '_power_sample_callback') and self._power_sample_callback:
+                                    try:
+                                        self._power_sample_callback(sample)
+                                    except Exception as cb_e:
+                                        print(f"Warning: Power sample callback failed: {cb_e}")
 
-                        # Reset buffer for next sample
-                        self._plist_buffer = ""
+                    except plistlib.InvalidFileException:
+                        # Invalid plist format - skip this sample
+                        pass
                     except Exception as e:
                         print(f"Warning: Failed to parse plist: {e}")
+                    finally:
+                        # Reset buffer for next sample
                         self._plist_buffer = ""
+                        in_plist = False
         except Exception as e:
             print(f"Error in sampling loop: {e}")
 

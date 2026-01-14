@@ -1,9 +1,14 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, lazy, Suspense } from 'react';
 import { ProfilingProvider } from './ProfilingContext';
+import { ProfilingErrorBoundary } from './ProfilingErrorBoundary';
 
-type TabView = 'live' | 'analysis' | 'history';
+// Lazy load the view components
+const RealTimeView = lazy(() => import('./RealTimeView').then(m => ({ default: m.RealTimeView })));
+const HistoryBrowser = lazy(() => import('./HistoryBrowser'));
+
+type TabView = 'live' | 'history';
 
 interface TabButtonProps {
   id: TabView;
@@ -45,19 +50,13 @@ function EnergyProfilerPanelContent() {
         <div className="flex space-x-1 px-6">
           <TabButton
             id="live"
-            label="Live"
+            label="Live Profiling"
             active={activeView === 'live'}
             onClick={setActiveView}
           />
           <TabButton
-            id="analysis"
-            label="Analysis"
-            active={activeView === 'analysis'}
-            onClick={setActiveView}
-          />
-          <TabButton
             id="history"
-            label="History"
+            label="History & Analysis"
             active={activeView === 'history'}
             onClick={setActiveView}
           />
@@ -66,38 +65,19 @@ function EnergyProfilerPanelContent() {
 
       {/* Content Area */}
       <div className="flex-1 overflow-auto bg-gray-50">
-        {activeView === 'live' && (
-          <div className="p-6">
-            <div className="bg-white rounded-lg shadow p-6">
-              <p className="text-gray-600">Live profiling view - Coming soon</p>
-              <p className="text-sm text-gray-500 mt-2">
-                Real-time power monitoring, token generation stream, and layer heatmaps will appear here.
-              </p>
+        <ProfilingErrorBoundary>
+          <Suspense fallback={
+            <div className="p-6">
+              <div className="bg-white rounded-lg shadow p-6 animate-pulse">
+                <div className="h-4 bg-gray-200 rounded w-1/4 mb-4"></div>
+                <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+              </div>
             </div>
-          </div>
-        )}
-
-        {activeView === 'analysis' && (
-          <div className="p-6">
-            <div className="bg-white rounded-lg shadow p-6">
-              <p className="text-gray-600">Analysis view - Coming soon</p>
-              <p className="text-sm text-gray-500 mt-2">
-                Post-inference analysis with heatmaps, treemaps, and detailed metrics will appear here.
-              </p>
-            </div>
-          </div>
-        )}
-
-        {activeView === 'history' && (
-          <div className="p-6">
-            <div className="bg-white rounded-lg shadow p-6">
-              <p className="text-gray-600">History browser - Coming soon</p>
-              <p className="text-sm text-gray-500 mt-2">
-                Browse past profiling runs, compare results, and export data will be available here.
-              </p>
-            </div>
-          </div>
-        )}
+          }>
+            {activeView === 'live' && <RealTimeView />}
+            {activeView === 'history' && <HistoryBrowser />}
+          </Suspense>
+        </ProfilingErrorBoundary>
       </div>
     </div>
   );

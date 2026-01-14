@@ -151,7 +151,7 @@
       "title": "Add error boundary for profiling components",
       "description": "No React error boundary wraps profiling components. JavaScript errors crash the entire dashboard instead of showing graceful error UI.",
       "priority": "low",
-      "passes": false,
+      "passes": true,
       "debug_steps": {
         "review": "Read src/components/profiling/EnergyProfilerPanel.tsx. No ErrorBoundary component wraps the profiling views.",
         "test": "Cause a JavaScript error in profiling component (e.g., access undefined property). Entire page crashes.",
